@@ -397,6 +397,7 @@ _LFE_BANDS = [
 # windows that exceed this threshold so that long silent passages do not
 # distort the results.
 _LFE_ACTIVITY_OFFSET_DB = 15.0
+_SPIKE_THRESHOLD_LU = 15.0   # short-term windows this many LU above integrated are counted as spikes
 
 _SURROUND_HIGHPASS_HZ = 80.0
 _SURROUND_HIGHPASS_ORDER = 4
@@ -850,6 +851,17 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     short_term = _loudness_from_z(z_3s, weights) if z_3s.shape[0] else \
         np.array([])
     lra = _loudness_range(short_term)
+
+    # Loudness Crest: how far the loudest moments exceed the programme mean.
+    # Spike Count: fraction of short-term windows more than _SPIKE_THRESHOLD_LU above integrated.
+    st_valid = short_term[short_term > _ABS_GATE_LUFS]
+    if st_valid.size > 0 and not np.isnan(integrated):
+        loudness_crest = float(np.max(st_valid)) - float(np.mean(st_valid))
+        spike_mask = st_valid > integrated + _SPIKE_THRESHOLD_LU
+        spike_pct = 100.0 * spike_mask.sum() / st_valid.size
+    else:
+        loudness_crest = float("nan")
+        spike_pct = float("nan")
     _tick("Block mean square 3 s + LRA")
 
     del weighted
@@ -870,6 +882,10 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         print(f"  Short-term max      : {np.max(short_term):8.1f} LUFS")
         print(f"  Short-term min      : "
               f"{np.min(short_term[short_term > _ABS_GATE_LUFS]):8.1f} LUFS")
+    if not np.isnan(loudness_crest):
+        print(f"  Loudness crest      : {loudness_crest:8.1f} LU")
+    if not np.isnan(spike_pct):
+        print(f"  Spikes (>{_SPIKE_THRESHOLD_LU:.0f} LU above int.): {spike_pct:5.1f} % of windows")
     print()
 
     if not np.isnan(lra) and lra < 5.0:
@@ -986,6 +1002,8 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         "n_channels": n_ch,
         "integrated_lufs": integrated,
         "lra_lu": lra,
+        "loudness_crest_lu": loudness_crest,
+        "spike_pct": spike_pct,
         "rms_dbfs": rms,
         "short_term": short_term,
         "momentary": momentary,
@@ -1189,11 +1207,17 @@ def _plot(result, out_path):
     bass_lbl = (_sub_bass_ratio_label(ba["sub_bass_ratio_db"])
                 if ba is not None and not np.isnan(ba["sub_bass_ratio_db"])
                 else "n/a")
+    crest = result.get("loudness_crest_lu", float("nan"))
+    spikes = result.get("spike_pct", float("nan"))
+    crest_str  = f"{crest:.1f} LU"  if not np.isnan(crest)  else "n/a"
+    spikes_str = f"{spikes:.1f} %"  if not np.isnan(spikes) else "n/a"
     sum_lines = [
         "Summary",
         f'  Loudness range : {lra_lbl}',
         f'  LFE activity   : {act_lbl}',
         f'  Bass character : {bass_lbl}',
+        f'  Loudness crest : {crest_str}',
+        f'  Spikes (>{_SPIKE_THRESHOLD_LU:.0f} LU) : {spikes_str}',
     ]
     ax4_sum.axis('off')
     ax4_sum.text(0.03, 0.97, "\n".join(sum_lines),
