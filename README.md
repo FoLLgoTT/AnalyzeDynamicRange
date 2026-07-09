@@ -1,4 +1,4 @@
-# AnalyzeDynamicRange
+﻿# AnalyzeDynamicRange
 
 A Python application for analyzing the dynamic range and loudness of film audio files according to international broadcast standards.
 
@@ -131,7 +131,7 @@ Surround channels receive a weight of 0.0 instead of +1.5 dB.
 Creates a detailed plot of the loudness analysis. You can specify a custom filename or omit it to use the input filename with `.png` extension:
 
 ```bash
-# Auto-generate filename (film.wav ? film.png)
+# Auto-generate filename (film.wav → film.png)
 python AnalyzeDynamicRange.py film.wav --plot
 
 # Specify custom filename
@@ -275,48 +275,6 @@ Excluded ch  : [4] (LFE, not part of loudness sum)
   LFE RMS level       :   -32.80 dBFS
   LFE crest factor    :    12.35 dB
   LFE activity        :    65.50 %
-```
-
-## Programming Interface
-
-### `analyze()` Function
-
-```python
-result = analyze(
-    path,                    # Path to audio file
-    layout=None,            # "mono", "stereo", "5.1", "7.1" or None
-    lfe_channel=None,       # 0-based index or None
-    per_channel=False,      # Per-channel metrics
-    exclude_surround=False  # Exclude surround channels
-)
-```
-
-**Return Value:** Dictionary containing:
-- `sr`: Sample rate
-- `n_channels`: Number of channels
-- `integrated_lufs`: Overall loudness
-- `lra_lu`: Loudness dynamic range
-- `true_peak_dbtp`: Highest true peak
-- `dr_score`: DR score
-- `rms_dbfs`: RMS level
-- `short_term`: Time series (3-second windows)
-- `momentary`: Time series (400 ms windows)
-- `step_s`: Window step size
-- `lfe_loudness`: LFE channel loudness (LUFS)
-- `lfe_peak_dbtp`: LFE channel true peak (dBTP)
-- `lfe_rms_dbfs`: LFE channel RMS level (dBFS)
-- `lfe_crest_factor`: LFE peak-to-RMS ratio (dB)
-- `lfe_activity_percent`: Percentage of time LFE is active (%)
-
-### Example (Programmatic Usage)
-
-```python
-from AnalyzeDynamicRange import analyze
-
-result = analyze("my_film.wav", layout="5.1")
-print(f"Loudness: {result['integrated_lufs']:.2f} LUFS")
-print(f"LRA: {result['lra_lu']:.2f} LU")
-print(f"True Peak: {result['true_peak_dbtp']:.2f} dBTP")
 ```
 
 ## Dependencies
