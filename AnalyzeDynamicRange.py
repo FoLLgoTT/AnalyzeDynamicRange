@@ -221,13 +221,16 @@ def _block_mean_square(weighted, sr, win_s, step_s):
     # Prefix sum of squares S where S[k] = sum(weighted[0..k-1]^2).
     # S[0] = 0 (prepended zero row) ensures a uniform formula for all blocks,
     # including the first one that starts at sample 0.
-    S = np.empty((n_samples + 1, n_ch), dtype=weighted.dtype)
+    # Always use float64 here: a float32 cumsum over millions of samples loses
+    # precision via catastrophic cancellation when quiet windows follow loud
+    # ones, causing the absolute gate (-70 LUFS) to misclassify blocks.
+    S = np.empty((n_samples + 1, n_ch), dtype=np.float64)
     S[0] = 0.0
-    np.cumsum(np.square(weighted), axis=0, out=S[1:])
+    np.cumsum(np.square(weighted, dtype=np.float64), axis=0, out=S[1:])
 
     starts = np.arange(0, n_samples - win + 1, step, dtype=np.intp)
     if starts.size == 0:
-        return np.empty((0, n_ch), dtype=weighted.dtype)
+        return np.empty((0, n_ch), dtype=np.float64)
 
     # sum(weighted[start..start+win-1]^2) = S[start+win] - S[start]
     return (S[starts + win] - S[starts]) / win
