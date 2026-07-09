@@ -775,11 +775,13 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
 
 
 def _plot(result, out_path):
-    """Render loudness analysis: time-series, histogram, and frequency response."""
+    """Render loudness analysis: time-series, histogram, metrics panel, and
+    frequency response."""
     try:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        from matplotlib.gridspec import GridSpec
     except ImportError:
         sys.exit("[ERR] --plot requires matplotlib. Install with "
                  "'pip install matplotlib'.")
@@ -791,8 +793,17 @@ def _plot(result, out_path):
     # Short-term windows are 3 s long, hopped by step_s; centre the curve.
     t = np.arange(short_term.size) * result["step_s"] + 1.5
 
-    # Create figure with 3 subplots
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 16), gridspec_kw={'height_ratios': [1, 1, 1.5]})
+    # Layout:  row 0 – loudness curve (full width)
+    #          row 1 – histogram (left) | metrics panel (right)
+    #          row 2 – frequency response (full width)
+    fig = plt.figure(figsize=(14, 18))
+    gs = GridSpec(3, 2, figure=fig,
+                  height_ratios=[1.1, 1.2, 1.4],
+                  hspace=0.38, wspace=0.28)
+    ax1 = fig.add_subplot(gs[0, :])
+    ax2 = fig.add_subplot(gs[1, 0])
+    ax4 = fig.add_subplot(gs[1, 1])
+    ax3 = fig.add_subplot(gs[2, :])
 
     # ===== Subplot 1: Loudness over time =====
     ax1.plot(t, short_term, lw=0.8, color="#1f77b4", label="Short-term loudness")
@@ -883,7 +894,52 @@ def _plot(result, out_path):
     ax3.grid(True, alpha=0.3, which='both')
     ax3.legend(loc="lower left", fontsize=9)
 
-    fig.tight_layout()
+    # ===== Metrics panel (ax4): LFE analysis + channel RMS rel. Center =====
+    ax4.axis('off')
+
+    def _fv(val, fmt):
+        """Format val or return 'N/A' when NaN."""
+        return "N/A" if (isinstance(val, float) and np.isnan(val)) \
+            else fmt % val
+
+    # --- LFE block ---
+    lfe_loudness = result["lfe_loudness"]
+    lfe_ratio = lfe_loudness - result["integrated_lufs"]
+    lfe_lines = [
+        "LFE Channel Analysis",
+        f"  Filter       LP @ {_LFE_LOWPASS_HZ:.0f} Hz, ord {_LFE_LOWPASS_ORDER}",
+        f"  Loudness     {_fv(lfe_loudness,    '%7.2f')} LUFS",
+        f"  LFE/Main     {_fv(lfe_ratio,       '%+7.2f')} dB",
+        f"  True peak    {_fv(result['lfe_peak_dbtp'],      '%7.2f')} dBTP",
+        f"  RMS          {_fv(result['lfe_rms_dbfs'],       '%7.2f')} dBFS",
+        f"  Crest        {_fv(result['lfe_crest_factor'],   '%7.2f')} dB",
+        f"  Activity     {_fv(result['lfe_activity_percent'],'%7.2f')} %",
+    ]
+
+    # --- Channel RMS block ---
+    surround_results = result["surround_rms"]
+    center_dbfs = result["center_rms_dbfs"]
+    rel_lines = ["Channel RMS relative to Center"]
+    if not (isinstance(center_dbfs, float) and np.isnan(center_dbfs)):
+        rel_lines.append(
+            f"  {'C  (Ch 3)':<12}  {center_dbfs:7.2f} dBFS  [ref]")
+        for label, rms_dbfs, rel_db in surround_results:
+            rel_lines.append(
+                f"  {label:<12}  {rms_dbfs:7.2f} dBFS  {rel_db:+.2f} dB")
+
+    _BOX_LFE = dict(boxstyle="round,pad=0.5", facecolor="#ddeeff",
+                    edgecolor="#3366aa", alpha=0.85)
+    _BOX_REL = dict(boxstyle="round,pad=0.5", facecolor="#ddf0dd",
+                    edgecolor="#2d7a2d", alpha=0.85)
+
+    ax4.text(0.03, 0.97, "\n".join(lfe_lines),
+             transform=ax4.transAxes, fontsize=8.5,
+             fontfamily="monospace", va="top", ha="left", bbox=_BOX_LFE)
+    ax4.text(0.53, 0.97, "\n".join(rel_lines),
+             transform=ax4.transAxes, fontsize=8.5,
+             fontfamily="monospace", va="top", ha="left", bbox=_BOX_REL)
+    ax4.set_title("Channel Metrics", fontsize=10)
+
     fig.savefig(out_path, dpi=120)
     print(f"\n  [PLOT] {out_path}")
 
