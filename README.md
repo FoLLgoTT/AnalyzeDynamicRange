@@ -25,7 +25,7 @@ These standards are internationally recognized and used in the film industry, st
 
 ### LFE Band Analysis (120 Hz low-pass applied before all measurements)
 
-The LFE channel is divided into four frequency bands. All level metrics are expressed **relative to the main-mix integrated loudness** so results are comparable across films with different overall levels. Statistics are computed only over LFE-active windows (short-term RMS ≥ integrated − 30 dB) to prevent long silent passages from distorting the results.
+The LFE channel is divided into four frequency bands. All level metrics are expressed **relative to the main-mix integrated loudness** so results are comparable across films with different overall levels. Statistics are computed only over LFE-active windows (short-term RMS ≥ integrated − 15 dB) to prevent long silent passages from distorting the results.
 
 | Metric | Unit | Description |
 |--------|------|-------------|
@@ -177,20 +177,22 @@ python AnalyzeDynamicRange.py movie.wav --no-plot
 
 ## Plot
 
-The plot is saved as a PNG (120 dpi) and contains **four panels**:
+The plot is saved as a PNG (120 dpi) and contains **five panels**:
 
 ```
 ┌────────────────────────────────────────────────┐
 │  1. Loudness over time              (full width)│
 └────────────────────────────────────────────────┘
 ┌───────────────────────────┬────────────────────┐
-│  2. LRA Histogram (wider) │  3. LFE Analysis   │
+│                           │  3. Channel RMS    │
+│  2. LRA Histogram (wider) │     rel. Center    │
 │                           ├────────────────────┤
-│                           │  4. Channel RMS    │
-│                           │     rel. Center    │
+│                           │  4. LFE Analysis   │
+│                           ├────────────────────┤
+│                           │  5. Summary        │
 └───────────────────────────┴────────────────────┘
 ┌────────────────────────────────────────────────┐
-│  5. Frequency Response              (full width)│
+│  6. Frequency Response              (full width)│
 └────────────────────────────────────────────────┘
 ```
 
@@ -199,29 +201,42 @@ The plot is saved as a PNG (120 dpi) and contains **four panels**:
 - Blue curve: Short-term loudness (3-second windows)
 - Red dashed line: Integrated loudness reference
 - Orange shaded band: LRA bounds (p10 to p95 of double-gated values)
-- Y-axis: −50 to 0 LUFS
+- Y-axis: 50 dB range, automatically scaled so the top aligns above the highest valid short-term value (rounded to the next 5 dB step)
 
 ### Panel 2 — Loudness Range Distribution
 
-- Light bars: Absolute-gated values (> −70 LUFS)
-- Dark bars: Double-gated values used for LRA calculation
+- Light bars: Absolute-gated values (> −70 LUFS), Y-axis in **percent of total windows**
+- Dark bars: Double-gated values used for LRA calculation (also in percent)
 - Red dotted line: Integrated loudness
 - Orange dashed line: p10 (LRA lower bound)
 - Green dashed line: p95 (LRA upper bound)
 - Grey lines: Absolute and relative gate thresholds
 - Title displays the EBU Tech 3342 LRA value — identical to Panel 1
+- X-axis is dynamically centred on the p10/p95 midpoint and always spans 50 dB in 5 dB steps
 
 Both the bounds and the title value are computed using the same double-gating logic as `_loudness_range()`, so the LRA shown in both panels is always identical.
 
-### Panel 3 — LFE Band Analysis
-
-Text box showing the LFE band analysis: overall activity (% of runtime), per-band activity / P95 / Peak levels (relative to main integrated loudness), sub-bass ratio with depth category, and spectral centroid.
-
-### Panel 4 — Channel RMS relative to Center
+### Panel 3 — Channel RMS relative to Center
 
 Text box showing the RMS level of each channel relative to the unfiltered Center channel.
 
-### Panel 5 — Frequency Response
+### Panel 4 — LFE Band Analysis
+
+Text box showing the LFE band analysis: overall activity (% of runtime), per-band activity / P95 / Peak levels (relative to main integrated loudness), sub-bass ratio, and spectral centroid.
+
+### Panel 5 — Summary
+
+Text box with a concise qualitative assessment derived from the numeric results:
+
+| Field | Source metric | Labels |
+|---|---|---|
+| **Loudness range** | LRA (LU) | `heavily compressed` · `compressed` · `moderate` · `dynamic` · `high dynamic` · `extreme dynamic` |
+| **LFE activity** | LFE active (% of runtime) | `restrained` · `moderate` · `active` · `very active` · `overused` |
+| **Bass characteristics** | Sub-bass ratio (dB) | `upper-bass` · `moderate` · `deep` · `seismic` |
+
+The thresholds for each label are documented in the sections below.
+
+### Panel 6 — Frequency Response
 
 - Green curve: Left channel (Ch 1)
 - Blue curve: Center channel (Ch 3)
@@ -284,12 +299,14 @@ The LRA is the difference between the **95th and 10th percentile** of the remain
 
 **LRA does not measure peak levels.** A movie can have a high LRA but still be clipping, or a low LRA but be at a perfectly safe level.
 
-| LRA | Interpretation |
+| LRA | Label |
 |---|---|
-| <20 LU | Low|
-| 20 - 25 LU | Medium |
-| 25 - 30 LU | High|
-| >30 LU | Very high|
+| > 35 LU | `extreme dynamic` |
+| > 30 LU | `high dynamic` |
+| > 25 LU | `dynamic` |
+| > 20 LU | `moderate` |
+| > 15 LU | `compressed` |
+| ≤ 15 LU | `heavily compressed` |
 
 ---
 
@@ -302,10 +319,18 @@ The LFE channel is analyzed **after** applying a zero-phase Butterworth low-pass
 Long silent passages in the LFE channel would distort statistical metrics such as P95 or spectral centroid. A 400 ms sliding window is classified as *active* if the full-band LFE short-term RMS exceeds:
 
 ```
-threshold = integrated_main − 30 dB
+threshold = integrated_main − 15 dB
 ```
 
 All per-band level statistics and energy ratios are computed exclusively over active windows. The overall activity percentage (shown in the header) indicates how much of the runtime contains meaningful LFE content.
+
+| Activity | Label |
+|---|---|
+| > 20 % | `overused` |
+| > 15 % | `very active` |
+| > 10 % | `active` |
+| > 5 % | `moderate` |
+| ≤ 5 % | `restrained` |
 
 ### Sub-bass ratio
 
@@ -317,10 +342,10 @@ Sub-bass ratio = 10 × log10( E(20–40 Hz) / E(40–120 Hz) )
 
 | Ratio | Category |
 |---|---|
-| > 0 dB | very deep |
-| > −3 dB | deep |
-| > −6 dB | moderate |
-| ≤ −6 dB | shallow |
+| > 0 dB | `seismic` — energy below 40 Hz dominates; strong body sensation |
+| > −3 dB | `deep` — deep grumble, noticeable sub-bass extension |
+| > −6 dB | `moderate` — balanced impact, controlled low end |
+| ≤ −6 dB | `upper-bass` — energy concentrated in 40–120 Hz mid-bass |
 
 ### Infrasound ratio
 
