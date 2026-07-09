@@ -37,6 +37,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import gc
 import glob
 import math
@@ -118,6 +119,10 @@ def _biquad_kweighting(sr):
 def _k_weight(data, sr):
     """Apply the BS.1770 K-weighting filter to multi-channel data.
 
+    Each channel is filtered in a separate thread.  lfilter releases the GIL
+    during its C-level computation, so threads run in parallel on multi-core
+    systems.
+
     Parameters
         data  Array of shape (n_samples, n_channels) in float.
         sr    Sample rate in Hz.
@@ -126,8 +131,18 @@ def _k_weight(data, sr):
         K-weighted array of the same shape and dtype as *data*.
     """
     (b1, a1), (b2, a2) = _biquad_kweighting(sr)
-    stage1 = lfilter(b1, a1, data, axis=0)
-    out = lfilter(b2, a2, stage1, axis=0)
+    n_ch = data.shape[1]
+
+    def _filter_ch(ch):
+        s1 = lfilter(b1, a1, data[:, ch])
+        return lfilter(b2, a2, s1)
+
+    with ThreadPoolExecutor(max_workers=n_ch) as ex:
+        cols = list(ex.map(_filter_ch, range(n_ch)))
+
+    out = np.empty_like(data)
+    for ch, col in enumerate(cols):
+        out[:, ch] = col
     return out.astype(data.dtype, copy=False)
 
 
@@ -290,7 +305,10 @@ def _downsample(data, sr, target_sr):
     """Downsample *data* to *target_sr* with anti-aliasing via resample_poly.
 
     Uses the GCD of the two rates to keep the up/down integer ratio as small
-    as possible, which keeps the FIR filter short and fast.
+    as possible, which keeps the FIR filter short and fast.  Each channel is
+    resampled in a separate thread so that multi-core CPUs are used; SciPy
+    releases the GIL during the FIR convolution, making thread parallelism
+    effective here.
 
     Parameters
         data       Audio array of shape (n_samples, n_channels) or 1D.
@@ -306,7 +324,23 @@ def _downsample(data, sr, target_sr):
     g = math.gcd(int(sr), int(target_sr))
     up = target_sr // g
     down = sr // g
-    return resample_poly(data, up, down, axis=0).astype(data.dtype), target_sr
+
+    if data.ndim == 1:
+        return resample_poly(data, up, down).astype(data.dtype), target_sr
+
+    n_ch = data.shape[1]
+    out_len = len(resample_poly(data[:1, 0], up, down))  # probe output length
+
+    def _resample_ch(ch):
+        return resample_poly(data[:, ch], up, down)
+
+    with ThreadPoolExecutor(max_workers=n_ch) as ex:
+        cols = list(ex.map(_resample_ch, range(n_ch)))
+
+    result = np.empty((out_len, n_ch), dtype=data.dtype)
+    for ch, col in enumerate(cols):
+        result[:, ch] = col
+    return result, target_sr
 
 
 _FREQ_RESPONSE_TARGET_SR = 800
