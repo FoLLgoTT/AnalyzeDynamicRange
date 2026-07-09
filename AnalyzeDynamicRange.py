@@ -428,38 +428,38 @@ def _lfe_lowpass(data_lfe, sr):
 
 def _lra_label(lra):
     if lra > 35:
-        return "extreme"
+        return "extreme dynamic"
     if lra > 30:
-        return "very high"
+        return "highly dynamic"
     if lra > 25:
-        return "high"
+        return "dynamic"
     if lra > 20:
-        return "medium"
+        return "moderate"
     if lra > 15:
-        return "low"
-    return "very low"
+        return "compressed"
+    return "heavily compressed"
 
 
 def _lfe_activity_label(pct):
     if pct > 20:
-        return "extreme"
+        return "overused"
     if pct > 15:
-        return "very high"
+        return "very active"
     if pct > 10:
-        return "high"
+        return "active"
     if pct > 5:
-        return "medium"
-    return "low"
+        return "moderate"
+    return "restrained"
 
 
 def _sub_bass_ratio_label(db):
     if db > 0:
-        return "very deep"
+        return "seismic"
     if db > -3:
         return "deep"
     if db > -6:
         return "moderate"
-    return "shallow"
+    return "upper-bass"
 
 
 def _lfe_band_analysis(data_lfe, sr, integrated_main):
