@@ -173,26 +173,35 @@ python AnalyzeDynamicRange.py movie.wav --no-plot
 | `script.py *.wav` | Per-file plots → `<name>.png` |
 | `script.py *.wav --plot out.png` | Warning; falls back to per-file naming |
 
+### `--skip-existing`
+
+Skips any input file whose corresponding plot PNG already exists on disk. Useful when re-running the script on a folder of files after adding new titles:
+
+```bash
+python AnalyzeDynamicRange.py *.wav --skip-existing
+```
+
 ---
 
 ## Plot
 
-The plot is saved as a PNG (120 dpi) and contains **five panels**:
+The plot is saved as a PNG (120 dpi) and contains **six panels**:
 
 ```
 ┌────────────────────────────────────────────────┐
 │  1. Loudness over time              (full width)│
-└────────────────────────────────────────────────┘
-┌───────────────────────────┬────────────────────┐
-│                           │  3. Channel RMS    │
-│  2. LRA Histogram (wider) │     rel. Center    │
+├────────────────────────────────────────────────┤
+│  2. LFE activity strip              (full width)│
+├───────────────────────────┬────────────────────┤
+│                           │  4. Channel RMS    │
+│  3. LRA Histogram (wider) │     rel. Center    │
 │                           ├────────────────────┤
-│                           │  4. LFE Analysis   │
+│                           │  5. LFE Analysis   │
 │                           ├────────────────────┤
-│                           │  5. Summary        │
+│                           │  6. Summary        │
 └───────────────────────────┴────────────────────┘
 ┌────────────────────────────────────────────────┐
-│  6. Frequency Response              (full width)│
+│  7. Frequency Response              (full width)│
 └────────────────────────────────────────────────┘
 ```
 
@@ -203,7 +212,16 @@ The plot is saved as a PNG (120 dpi) and contains **five panels**:
 - Orange shaded band: LRA bounds (p10 to p95 of double-gated values)
 - Y-axis: 50 dB range, automatically scaled so the top aligns above the highest valid short-term value (rounded to the next 5 dB step)
 
-### Panel 2 — Loudness Range Distribution
+### Panel 2 — LFE activity strip
+
+A narrow bar directly below the loudness curve, sharing the same time axis:
+
+- **Red** (opaque): Short-term RMS windows where LFE exceeds the activity threshold (`integrated − 15 dB`)
+- **Grey** (transparent): Windows below the activity threshold (LFE inactive or very quiet)
+- Y-axis: −60 to 0 dBFS (LFE short-term RMS, 3-second windows, 0.1-second hop)
+- Hidden when no LFE channel is present
+
+### Panel 3 — Loudness Range Distribution
 
 - Light bars: Absolute-gated values (> −70 LUFS), Y-axis in **percent of total windows**
 - Dark bars: Double-gated values used for LRA calculation (also in percent)
@@ -216,15 +234,15 @@ The plot is saved as a PNG (120 dpi) and contains **five panels**:
 
 Both the bounds and the title value are computed using the same double-gating logic as `_loudness_range()`, so the LRA shown in both panels is always identical.
 
-### Panel 3 — Channel RMS relative to Center
+### Panel 4 — Channel RMS relative to Center
 
 Text box showing the RMS level of each channel relative to the unfiltered Center channel.
 
-### Panel 4 — LFE Band Analysis
+### Panel 5 — LFE Band Analysis
 
 Text box showing the LFE band analysis: overall activity (% of runtime), per-band activity / P95 / Peak levels (relative to main integrated loudness), sub-bass ratio, and spectral centroid.
 
-### Panel 5 — Summary
+### Panel 6 — Summary
 
 Text box with a concise qualitative assessment derived from the numeric results:
 
@@ -236,7 +254,7 @@ Text box with a concise qualitative assessment derived from the numeric results:
 
 The thresholds for each label are documented in the sections below.
 
-### Panel 6 — Frequency Response
+### Panel 7 — Frequency Response
 
 - Green curve: Left channel (Ch 1)
 - Blue curve: Center channel (Ch 3)
