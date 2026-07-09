@@ -311,7 +311,7 @@ _FREQ_RESPONSE_F_MIN = 2.0
 _FREQ_RESPONSE_F_MAX = 200.0
 
 
-def _frequency_response(audio_data, sr, fraction=12,
+def _frequency_response(audio_data, sr, fraction=24,
                         f_min=_FREQ_RESPONSE_F_MIN,
                         f_max=_FREQ_RESPONSE_F_MAX):
     """Calculate the fractional-octave-smoothed frequency response in dB.
@@ -325,7 +325,7 @@ def _frequency_response(audio_data, sr, fraction=12,
     Parameters
         audio_data  Audio signal (1D float array).
         sr          Original sample rate in Hz.
-        fraction    Octave fraction for smoothing (12 = 1/12 octave).
+        fraction    Octave fraction for smoothing (24 = 1/242 octave).
         f_min       Lowest band centre frequency in Hz.
         f_max       Highest band centre frequency in Hz.
 
@@ -630,7 +630,7 @@ def _plot(result, out_path):
     t = np.arange(short_term.size) * result["step_s"] + 1.5
 
     # Create figure with 3 subplots
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 14))
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 16), gridspec_kw={'height_ratios': [1, 1, 1.5]})
 
     # ===== Subplot 1: Loudness over time =====
     ax1.plot(t, short_term, lw=0.8, color="#1f77b4", label="Short-term loudness")
@@ -667,15 +667,15 @@ def _plot(result, out_path):
         ax2.hist(lv_gated, bins=bins, color="#1f77b4", alpha=0.7, edgecolor="black", linewidth=0.5)
 
         # Add vertical lines for key metrics
-        ax2.axvline(result["integrated_lufs"], color="#d62728", ls="--", lw=2.0,
+        ax2.axvline(result["integrated_lufs"], color="#d62728", ls=":", lw=2.0,
                    label=f"Integrated {result['integrated_lufs']:.1f} LUFS")
 
         # Add LRA bounds
         p10 = np.percentile(lv_gated, 10)
         p95 = np.percentile(lv_gated, 95)
-        ax2.axvline(p10, color="#ff7f0e", ls=":", lw=1.5, 
+        ax2.axvline(p10, color="#ff7f0e", ls="--", lw=2.0, 
                    label=f"10th percentile {p10:.1f} LUFS")
-        ax2.axvline(p95, color="#2ca02c", ls=":", lw=1.5,
+        ax2.axvline(p95, color="#2ca02c", ls="--", lw=2.0,
                    label=f"95th percentile {p95:.1f} LUFS")
 
         # Add gating threshold line
@@ -700,11 +700,11 @@ def _plot(result, out_path):
 
     if center_idx is not None and audio_data.shape[1] > center_idx:
         freqs_c, mag_c = _frequency_response(audio_data[:, center_idx], sr)
-        ax3.plot(freqs_c, mag_c, lw=1.0, color="#1f77b4", label="Center (Ch 3)")
+        ax3.plot(freqs_c, mag_c, lw=1.0, color="#1f77b4", label="Center")
 
     if lfe_idx is not None and audio_data.shape[1] > lfe_idx:
         freqs_l, mag_l = _frequency_response(audio_data[:, lfe_idx], sr)
-        ax3.plot(freqs_l, mag_l, lw=1.0, color="#d62728", label="LFE (Ch 4)")
+        ax3.plot(freqs_l, mag_l, lw=1.0, color="#d62728", label="LFE")
 
     ax3.set_xscale('log')
     ax3.set_xlim(_FREQ_RESPONSE_F_MIN, _FREQ_RESPONSE_F_MAX)
@@ -716,8 +716,8 @@ def _plot(result, out_path):
 
     ax3.set_xlabel("Frequency (Hz)")
     ax3.set_ylabel("Magnitude (dB, normalized)")
-    ax3.set_title("Frequency Response: Center vs LFE  "
-                  f"(1/12 oct, downsampled to {_FREQ_RESPONSE_TARGET_SR} Hz)")
+    ax3.set_title("Frequency Response "
+                  f"(1/24 oct)")
     ax3.grid(True, alpha=0.3, which='both')
     ax3.legend(loc="lower left", fontsize=9)
 
