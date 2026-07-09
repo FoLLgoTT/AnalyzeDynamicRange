@@ -274,31 +274,6 @@ def _loudness_range(short_term_loudness):
     return float(np.percentile(gated, 95) - np.percentile(gated, 10))
 
 
-def _true_peak_dbtp(data, sr):
-    """Estimate the true peak (dBTP) via 4x oversampling, one channel at a time.
-
-    Processing each channel individually avoids creating an n_channels × 4
-    oversampled copy of the entire file simultaneously, which would dominate
-    peak memory for multi-channel, long-duration audio.
-
-    Returns
-        (overall_dbtp, per_channel_dbtp) where per_channel_dbtp is a list.
-    """
-    # 4x oversampling is the BS.1770 Annex 2 recommendation up to 96 kHz.
-    factor = 4 if sr <= 96000 else 2
-    data_2d = data if data.ndim > 1 else data[:, np.newaxis]
-    n_ch = data_2d.shape[1]
-
-    per_channel = []
-    for ch in range(n_ch):
-        oversampled_ch = resample_poly(data_2d[:, ch], factor, 1)
-        peak = float(np.max(np.abs(oversampled_ch)))
-        per_channel.append(20.0 * np.log10(max(peak, _EPS)))
-
-    overall = max(per_channel)
-    return overall, per_channel
-
-
 def _dr_score(data, sr, block_s=3.0, top_fraction=0.2):
     """TT Dynamic Range style DR score (crest factor of the loudest blocks).
 
@@ -535,14 +510,6 @@ def _lfe_rms_dbfs(data_lfe):
     return 20.0 * np.log10(max(float(rms), _EPS))
 
 
-def _lfe_true_peak_dbtp(data_lfe, sr):
-    """True peak level of LFE channel via 4x oversampling."""
-    factor = 4 if sr <= 96000 else 2
-    oversampled = resample_poly(data_lfe, factor, 1, axis=0)
-    peak = np.max(np.abs(oversampled))
-    return 20.0 * np.log10(max(float(peak), _EPS))
-
-
 def _lfe_crest_factor(data_lfe):
     """Crest factor of LFE: Peak / RMS ratio in dB."""
     peak = np.max(np.abs(data_lfe))
@@ -754,26 +721,8 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         lfe_idx = lfe_channel
 
     # -----------------------------------------------------------------------
-    # Metrics that require the original sample rate
-    # -----------------------------------------------------------------------
-
-    # True Peak: 4x oversampling per BS.1770 Annex 2.  Channel-by-channel so
-    # that only one oversampled channel (not all channels) is in RAM at once.
-    true_peak, tp_per_ch = _true_peak_dbtp(data, sr)
-    _tick("True Peak (orig. SR, ch-by-ch)")
-
-    # LFE True Peak: computed from the full-SR filtered LFE channel before the
-    # main array is downsampled and freed.
-    lfe_peak = float("nan")
-    if lfe_idx is not None:
-        _lfe_fullsr = _lfe_lowpass(data[:, lfe_idx], sr)
-        lfe_peak = _lfe_true_peak_dbtp(_lfe_fullsr, sr)
-        del _lfe_fullsr
-    _tick("LFE True Peak (orig. SR)")
-
-    # -----------------------------------------------------------------------
     # Downsample to _LOUDNESS_SR and release the full-resolution array.
-    # All remaining metrics are computed from the compact representation.
+    # All metrics are computed from the compact representation.
     # -----------------------------------------------------------------------
     data_ds, sr_ds = _downsample(data, sr, _LOUDNESS_SR)
     del data
@@ -827,7 +776,6 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     print("=== Dynamic Range / Loudness ===")
     print(f"  Integrated loudness : {integrated:8.1f} LUFS")
     print(f"  Loudness range (LRA): {lra:8.1f} LU")
-    print(f"  True peak           : {true_peak:8.1f} dBTP")
     print(f"  DR score            : {dr:8.0f}")
     print(f"  RMS level           : {rms:8.1f} dBFS")
     if momentary.size:
@@ -838,9 +786,6 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
               f"{np.min(short_term[short_term > _ABS_GATE_LUFS]):8.1f} LUFS")
     print()
 
-    if true_peak > -1.0:
-        print(f"  [WARN] True peak exceeds -1 dBTP - risk of clipping on "
-              f"downstream conversion.")
     if not np.isnan(lra) and lra < 5.0:
         print(f"  [INFO] Low LRA ({lra:.1f} LU) - heavily compressed for film.")
 
@@ -857,11 +802,10 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
             elif abs(base_weights[ch] - 1.41) < 1e-6:
                 tag = " (surround, excluded from sum)" if exclude_surround \
                     else " (surround)"
-            print(f"  Channel {ch + 1:2d}: {ch_int:8.1f} LUFS  "
-                  f"true peak {tp_per_ch[ch]:7.1f} dBTP{tag}")
+            print(f"  Channel {ch + 1:2d}: {ch_int:8.1f} LUFS{tag}")
 
     # -----------------------------------------------------------------------
-    # LFE channel analysis (at _LOUDNESS_SR; True Peak already computed above)
+    # LFE channel analysis (at _LOUDNESS_SR)
     # -----------------------------------------------------------------------
     lfe_loudness = float("nan")
     lfe_rms = float("nan")
@@ -885,13 +829,10 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         if not np.isnan(integrated) and not np.isnan(lfe_loudness):
             lfe_ratio = lfe_loudness - integrated
             print(f"  LFE-to-main ratio   : {lfe_ratio:8.1f} dB")
-        print(f"  LFE peak            : {lfe_peak:8.1f} dBTP")
         print(f"  LFE RMS level       : {lfe_rms:8.1f} dBFS")
         print(f"  LFE crest factor    : {lfe_crest:8.1f} dB")
         print(f"  LFE activity        : {lfe_activity:8.1f} %")
 
-        if lfe_peak > -1.0:
-            print(f"  [WARN] LFE peak exceeds -1 dBTP - risk of clipping.")
         if not np.isnan(lfe_loudness) and not np.isnan(integrated):
             ratio = lfe_loudness - integrated
             if ratio > -6.0:
@@ -949,14 +890,12 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         "n_channels": n_ch,
         "integrated_lufs": integrated,
         "lra_lu": lra,
-        "true_peak_dbtp": true_peak,
         "dr_score": dr,
         "rms_dbfs": rms,
         "short_term": short_term,
         "momentary": momentary,
         "step_s": 0.1,
         "lfe_loudness": lfe_loudness,
-        "lfe_peak_dbtp": lfe_peak,
         "lfe_rms_dbfs": lfe_rms,
         "lfe_crest_factor": lfe_crest,
         "lfe_activity_percent": lfe_activity,
@@ -1023,8 +962,7 @@ def _plot(result, out_path):
     ax1.set_xlabel("Time (s)")
     ax1.set_ylabel("Loudness (LUFS)")
     ax1.set_ylim(-55, -5)
-    ax1.set_title(f"Film loudness over time  -  LRA {result['lra_lu']:.1f} LU, "
-                  f"true peak {result['true_peak_dbtp']:.1f} dBTP")
+    ax1.set_title(f"Film loudness over time  -  LRA {result['lra_lu']:.1f} LU")
     ax1.grid(True, alpha=0.3)
     ax1.legend(loc="lower right", fontsize=9)
 
@@ -1110,7 +1048,6 @@ def _plot(result, out_path):
         f"  Filter       LP @ {_LFE_LOWPASS_HZ:.0f} Hz, ord {_LFE_LOWPASS_ORDER}",
         f"  Loudness     {_fv(lfe_loudness,                  '%7.1f')} LUFS",
         f"  LFE/Main     {_fv(lfe_ratio,                     '%+7.1f')} dB",
-        f"  True peak    {_fv(result['lfe_peak_dbtp'],        '%7.1f')} dBTP",
         f"  RMS          {_fv(result['lfe_rms_dbfs'],         '%7.1f')} dBFS",
         f"  Crest        {_fv(result['lfe_crest_factor'],     '%7.1f')} dB",
         f"  Activity     {_fv(result['lfe_activity_percent'], '%7.1f')} %",

@@ -19,7 +19,6 @@ These standards are internationally recognized and used in the film industry, st
 |--------|------|-------------|
 | **Integrated Loudness** | LUFS | Gated programme loudness across the entire file |
 | **Loudness Range (LRA)** | LU | Dynamic range per EBU Tech 3342 |
-| **True Peak** | dBTP | Inter-sample peak at 4× oversampling |
 | **DR Score** | integer | Crest-factor-based dynamic range metric |
 | **RMS Level** | dBFS | Overall RMS across all channels |
 | **Momentary Loudness** | LUFS | Time series over 400 ms windows |
@@ -32,7 +31,6 @@ These standards are internationally recognized and used in the film industry, st
 |--------|------|-------------|
 | **LFE Loudness** | LUFS | Integrated loudness of the LFE channel |
 | **LFE-to-Main Ratio** | dB | Level difference between LFE and main mix |
-| **LFE True Peak** | dBTP | True peak of the LFE channel |
 | **LFE RMS** | dBFS | RMS level of the LFE channel |
 | **LFE Crest Factor** | dB | Peak-to-RMS ratio of LFE |
 | **LFE Activity** | % | Time above −50 dBFS threshold |
@@ -53,7 +51,6 @@ All channels are measured against the unfiltered Center channel (Ch 3) as refere
 - **Double gating**: Absolute gate at −70 LUFS + relative gate −10 LU below mean (integrated loudness); −20 LU below mean (LRA) — both per EBU Tech 3342
 - **Surround Channels**: Automatic +1.5 dB weighting per BS.1770
 - **LFE Exclusion**: Subwoofer channel excluded from the loudness sum
-- **4× Oversampling**: Correct true peak measurement up to 96 kHz
 
 ---
 
@@ -114,7 +111,6 @@ Surround ch  : [5, 6] (weighted +1.5 dB)
 === Dynamic Range / Loudness ===
   Integrated loudness :   -23.45 LUFS
   Loudness range (LRA):    11.20 LU
-  True peak           :    -3.50 dBTP
   DR score            :       12
   RMS level           :   -30.15 dBFS
   Momentary max       :   -18.30 LUFS
@@ -125,7 +121,6 @@ Surround ch  : [5, 6] (weighted +1.5 dB)
   Low-pass filter     : 120 Hz (Butterworth order 4, zero-phase)
   LFE loudness        :   -31.20 LUFS
   LFE-to-main ratio   :    -7.75 dB
-  LFE peak            :    -1.50 dBTP
   LFE RMS level       :   -32.80 dBFS
   LFE crest factor    :    12.35 dB
   LFE activity        :    65.50 %
@@ -177,7 +172,7 @@ python AnalyzeDynamicRange.py film.wav --lfe-channel 3
 
 ### `--per-channel`
 
-Reports integrated loudness and true peak for each individual channel:
+Reports integrated loudness for each individual channel:
 
 ```bash
 python AnalyzeDynamicRange.py film.wav --per-channel
@@ -257,7 +252,7 @@ Both the bounds and the title value are computed using the same double-gating lo
 
 ### Panel 3 — LFE Channel Analysis
 
-Text box showing all LFE metrics (loudness, LFE/Main ratio, true peak, RMS, crest factor, activity).
+Text box showing all LFE metrics (loudness, LFE/Main ratio, RMS, crest factor, activity).
 
 ### Panel 4 — Channel RMS relative to Center
 
@@ -331,14 +326,6 @@ The LRA is the difference between the **95th and 10th percentile** of the remain
 | 5–10 LU | Moderately compressed — typical of broadcast TV |
 | 10–20 LU | Dynamic — typical target for theatrical film mixes |
 | > 20 LU | Very dynamic — orchestral, documentary, dialogue-heavy drama |
-
-### True Peak (dBTP)
-
-| Level | Meaning |
-|---|---|
-| ≤ −1 dBTP | Safe for digital broadcasting |
-| ≤ −3 dBTP | Conservative safety margin |
-| > 0 dBTP | Risk of clipping |
 
 ### DR Score
 
@@ -426,26 +413,24 @@ All formats supported by `libsndfile` / `soundfile`:
 
 The script loads the entire file into RAM at the original sample rate. The following optimisations keep peak RAM well below the raw-file size:
 
-1. **True Peak** is computed **one channel at a time** at the original sample rate (4× oversampling per BS.1770 Annex 2). Only one oversampled channel exists in RAM at any moment instead of the entire 4× array.
-2. **LFE True Peak** is computed from the filtered LFE channel (one channel) before the main array is freed.
-3. After True Peak is done the entire audio is **downsampled to 16 kHz** for all remaining metrics (K-weighted loudness, LRA, DR score, RMS, LFE loudness/crest/activity, surround RMS, DC offset). The downsampled copy is ~3× smaller for a 48 kHz source.
-4. The **original full-resolution array is immediately freed** after the downsampling step.
-5. The **frequency-response plot** uses only a 300-second centred excerpt at 16 kHz, so no large array is retained after analysis.
+1. The entire audio is **downsampled to 16 kHz** immediately after reading. All metrics (K-weighted loudness, LRA, DR score, RMS, LFE loudness/crest/activity, surround RMS, DC offset) are computed from this compact representation. The downsampled copy is ~3× smaller for a 48 kHz source.
+2. The **original full-resolution array is immediately freed** after the downsampling step.
+3. The **frequency-response plot** uses only a 300-second centred excerpt at 16 kHz, so no large array is retained after analysis.
 
 ### Approximate peak RAM requirement
 
 | Duration | Channels | Source SR | Peak RAM (approx.) |
 |---|---|---|---|
-| 10 min | stereo | 48 kHz | < 0.2 GB |
-| 30 min | 5.1 | 48 kHz | ~0.5 GB |
-| 2 h | 7.1 | 48 kHz | ~15 GB |
-| 3 h | 7.1 | 48 kHz | ~22 GB |
+| 10 min | stereo | 48 kHz | < 0.1 GB |
+| 30 min | 5.1 | 48 kHz | ~0.3 GB |
+| 2 h | 7.1 | 48 kHz | ~8 GB |
+| 3 h | 7.1 | 48 kHz | ~12 GB |
 
-Peak occurs during the True Peak phase when the original full-resolution file and one 4× oversampled channel coexist. After that point RAM drops to around 1/3 of the raw-file size.
+Peak occurs during the downsampling step when the original full-resolution file and the 16 kHz copy briefly coexist. After that point RAM stays at around 1/3 of the raw-file size.
 
 ### Recommendation: analyse representative excerpts
 
-For very long feature film files it is still recommended to **extract a representative excerpt** before running the analysis — for example the middle 5–10 minutes of the film. Loudness metrics (LUFS, LRA), True Peak and the frequency response are statistically stable over a few minutes of typical programme content.
+For very long feature film files it is still recommended to **extract a representative excerpt** before running the analysis — for example the middle 5–10 minutes of the film. Loudness metrics (LUFS, LRA) and the frequency response are statistically stable over a few minutes of typical programme content.
 
 Example using `ffmpeg` to extract 10 minutes starting at the 30-minute mark:
 
@@ -467,10 +452,6 @@ pip install numpy scipy soundfile
 ### `Not enough audio to plot a short-term loudness curve`
 
 The file is too short (< ~4 s). The script needs enough blocks for meaningful short-term loudness analysis.
-
-### True Peak warning (> −1 dBTP)
-
-The file exceeds the safe headroom level. Lower the gain to avoid inter-sample clipping on downstream conversion.
 
 ### Low LRA (< 5 LU) info
 
