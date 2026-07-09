@@ -333,24 +333,6 @@ def _dc_offset_per_channel(data):
     return results
 
 
-def _plr(true_peak_dbtp, integrated_lufs):
-    """Peak-to-Loudness Ratio (PLR) in LU.
-
-    PLR = True Peak (dBTP) − Integrated Loudness (LUFS).  A higher PLR means
-    more headroom relative to the loudness anchor.  Film mixes should target
-    PLR ≥ 18 LU (EBU R128 / SMPTE ST 2095-1 guidance).
-
-    Parameters
-        true_peak_dbtp    Overall true peak in dBTP.
-        integrated_lufs   Integrated loudness in LUFS.
-
-    Returns
-        PLR in LU, or NaN when integrated loudness is NaN.
-    """
-    if np.isnan(integrated_lufs):
-        return float("nan")
-    return true_peak_dbtp - integrated_lufs
-
 
 _FREQ_RESPONSE_TARGET_SR = 800
 _FREQ_RESPONSE_F_MIN = 2.0
@@ -703,13 +685,11 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     true_peak, tp_per_ch = _true_peak_dbtp(data, sr)
     dr = _dr_score(data, sr)
     rms = _rms_dbfs(data)
-    plr = _plr(true_peak, integrated)
 
     print("=== Dynamic Range / Loudness ===")
     print(f"  Integrated loudness : {integrated:8.1f} LUFS")
     print(f"  Loudness range (LRA): {lra:8.1f} LU")
     print(f"  True peak           : {true_peak:8.1f} dBTP")
-    print(f"  PLR                 : {plr:8.1f} LU")
     print(f"  DR score            : {dr:8.0f}")
     print(f"  RMS level           : {rms:8.1f} dBFS")
     if momentary.size:
@@ -723,9 +703,6 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     if true_peak > -1.0:
         print(f"  [WARN] True peak exceeds -1 dBTP - risk of clipping on "
               f"downstream conversion.")
-    if not np.isnan(plr) and plr < 18.0:
-        print(f"  [WARN] PLR {plr:.1f} LU < 18 LU - mix may be over-compressed "
-              f"or lacks sufficient headroom.")
     if not np.isnan(lra) and lra < 5.0:
         print(f"  [INFO] Low LRA ({lra:.1f} LU) - heavily compressed for film.")
 
@@ -822,7 +799,6 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         "integrated_lufs": integrated,
         "lra_lu": lra,
         "true_peak_dbtp": true_peak,
-        "plr_lu": plr,
         "dr_score": dr,
         "rms_dbfs": rms,
         "short_term": short_term,
@@ -895,8 +871,7 @@ def _plot(result, out_path):
     ax1.set_ylabel("Loudness (LUFS)")
     ax1.set_ylim(-50, 0)
     ax1.set_title(f"Film loudness over time  -  LRA {result['lra_lu']:.1f} LU, "
-                  f"true peak {result['true_peak_dbtp']:.1f} dBTP, "
-                  f"PLR {result['plr_lu']:.1f} LU")
+                  f"true peak {result['true_peak_dbtp']:.1f} dBTP")
     ax1.grid(True, alpha=0.3)
     ax1.legend(loc="lower right", fontsize=9)
 
