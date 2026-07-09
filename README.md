@@ -420,6 +420,34 @@ All formats supported by `libsndfile` / `soundfile`:
 
 ---
 
+## Memory Usage
+
+The script loads the **entire audio file into RAM** before analysis begins. Additionally, the K-weighting filter and the 4× oversampling for True Peak each create a full copy of the data internally, so peak memory usage can reach **3–4× the raw file size**.
+
+### Approximate RAM requirement
+
+| Duration | Channels | Sample rate | RAM (approx.) |
+|---|---|---|---|
+| 10 min | stereo | 48 kHz | ~0.6 GB |
+| 30 min | 5.1 | 48 kHz | ~2.5 GB |
+| 2 h | 7.1 | 48 kHz | ~40 GB |
+| 3 h | 7.1 | 48 kHz | ~60 GB |
+
+### Recommendation: analyse representative excerpts
+
+For long feature film files it is strongly recommended to **extract a representative excerpt** before running the analysis — for example the middle 5–10 minutes of the film. Loudness metrics (LUFS, LRA), True Peak and the frequency response are statistically stable over a few minutes of typical programme content; analysing the full 2–3 hour file does not materially improve the accuracy of these metrics.
+
+Example using `ffmpeg` to extract 10 minutes starting at the 30-minute mark:
+
+```bash
+ffmpeg -ss 00:30:00 -t 00:10:00 -i film.wav -c copy excerpt.wav
+python AnalyzeDynamicRange.py excerpt.wav
+```
+
+A block-wise streaming implementation that would remove this limitation is not yet available.
+
+---
+
 ## Troubleshooting
 
 ### `ModuleNotFoundError: No module named 'soundfile'`
