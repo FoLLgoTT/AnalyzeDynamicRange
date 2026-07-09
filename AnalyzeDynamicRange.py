@@ -854,14 +854,19 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
 
     # Loudness Crest: how far the loudest moments exceed the programme mean.
     # Spike Count: fraction of short-term windows more than _SPIKE_THRESHOLD_LU above integrated.
+    # Tail Headroom: p99 − p95 — how far rare peaks stick out above the distribution tail.
     st_valid = short_term[short_term > _ABS_GATE_LUFS]
     if st_valid.size > 0 and not np.isnan(integrated):
         loudness_crest = float(np.max(st_valid)) - float(np.mean(st_valid))
         spike_mask = st_valid > integrated + _SPIKE_THRESHOLD_LU
         spike_pct = 100.0 * spike_mask.sum() / st_valid.size
+        p95_val = float(np.percentile(st_valid, 95))
+        p99_val = float(np.percentile(st_valid, 99))
+        tail_headroom = p99_val - p95_val
     else:
         loudness_crest = float("nan")
         spike_pct = float("nan")
+        tail_headroom = float("nan")
     _tick("Block mean square 3 s + LRA")
 
     del weighted
@@ -884,6 +889,8 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
               f"{np.min(short_term[short_term > _ABS_GATE_LUFS]):8.1f} LUFS")
     if not np.isnan(loudness_crest):
         print(f"  Loudness crest      : {loudness_crest:8.1f} LU")
+    if not np.isnan(tail_headroom):
+        print(f"  Tail headroom (p99−p95): {tail_headroom:5.1f} LU")
     if not np.isnan(spike_pct):
         print(f"  Spikes (>{_SPIKE_THRESHOLD_LU:.0f} LU above int.): {spike_pct:5.1f} % of windows")
     print()
@@ -1004,6 +1011,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         "lra_lu": lra,
         "loudness_crest_lu": loudness_crest,
         "spike_pct": spike_pct,
+        "tail_headroom_lu": tail_headroom,
         "rms_dbfs": rms,
         "short_term": short_term,
         "momentary": momentary,
@@ -1209,14 +1217,17 @@ def _plot(result, out_path):
                 else "n/a")
     crest = result.get("loudness_crest_lu", float("nan"))
     spikes = result.get("spike_pct", float("nan"))
+    tail = result.get("tail_headroom_lu", float("nan"))
     crest_str  = f"{crest:.1f} LU"  if not np.isnan(crest)  else "n/a"
     spikes_str = f"{spikes:.1f} %"  if not np.isnan(spikes) else "n/a"
+    tail_str   = f"{tail:.1f} LU"   if not np.isnan(tail)   else "n/a"
     sum_lines = [
         "Summary",
         f'  Loudness range : {lra_lbl}',
         f'  LFE activity   : {act_lbl}',
         f'  Bass character : {bass_lbl}',
         f'  Loudness crest : {crest_str}',
+        f'  Tail headroom  : {tail_str}',
         f'  Spikes (>{_SPIKE_THRESHOLD_LU:.0f} LU) : {spikes_str}',
     ]
     ax4_sum.axis('off')
