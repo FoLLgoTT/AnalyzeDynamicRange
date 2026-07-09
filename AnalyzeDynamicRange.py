@@ -900,6 +900,12 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     if lfe_idx is not None:
         lfe_data_ds = _lfe_lowpass(data_ds[:, lfe_idx], sr_ds)
         lfe_band_result = _lfe_band_analysis(lfe_data_ds, sr_ds, integrated)
+        # Short-term RMS curve for the LFE plot strip (3 s window, 0.1 s hop).
+        lfe_2d = lfe_data_ds.reshape(-1, 1)
+        lfe_ms = _block_mean_square(lfe_2d, sr_ds, win_s=3.0, step_s=0.1)
+        lfe_rms_db = 10.0 * np.log10(np.maximum(lfe_ms[:, 0], 1e-20))
+    else:
+        lfe_rms_db = None
     _tick("LFE band analysis")
 
     if lfe_band_result is not None:
@@ -992,6 +998,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         "momentary": momentary,
         "step_s": 0.1,
         "lfe_band_analysis": lfe_band_result,
+        "lfe_rms_db": lfe_rms_db,
         "center_rms_dbfs": center_dbfs,
         "surround_rms": surround_results,
         # Compact excerpt for the frequency-response plot.  The full-resolution
@@ -1020,18 +1027,20 @@ def _plot(result, out_path):
     t = np.arange(short_term.size) * result["step_s"] + 1.5
 
     # Layout:  row 0 – loudness curve (full width)
-    #          row 1 – histogram (left) | metrics panel (right)
-    #          row 2 – frequency response (full width)
+    #          row 1 – LFE activity strip (full width, shared x with row 0)
+    #          row 2-4 – histogram (left) | metrics panels (right)
+    #          row 5 – frequency response (full width)
     fig = plt.figure(figsize=(12, 16.97), constrained_layout=True)
-    gs = GridSpec(5, 2, figure=fig,
-                  height_ratios=[1.3, 0.33, 0.33, 0.33, 2.0],
+    gs = GridSpec(6, 2, figure=fig,
+                  height_ratios=[1.3, 0.18, 0.33, 0.33, 0.33, 2.0],
                   width_ratios=[4.5, 1])
-    ax1 = fig.add_subplot(gs[0, :])       # loudness over time  – full width
-    ax2 = fig.add_subplot(gs[1:4, 0])     # histogram           – left, 3 rows tall
-    ax4_rel = fig.add_subplot(gs[1, 1])   # channel RMS         – top right
-    ax4_lfe = fig.add_subplot(gs[2, 1])   # LFE metrics         – middle right
-    ax4_sum = fig.add_subplot(gs[3, 1])   # summary             – bottom right
-    ax3 = fig.add_subplot(gs[4, :])
+    ax1     = fig.add_subplot(gs[0, :])       # loudness over time  – full width
+    ax_lfe_strip = fig.add_subplot(gs[1, :], sharex=ax1)  # LFE strip – full width
+    ax2     = fig.add_subplot(gs[2:5, 0])     # histogram           – left, 3 rows tall
+    ax4_rel = fig.add_subplot(gs[2, 1])       # channel RMS         – top right
+    ax4_lfe = fig.add_subplot(gs[3, 1])       # LFE metrics         – middle right
+    ax4_sum = fig.add_subplot(gs[4, 1])       # summary             – bottom right
+    ax3     = fig.add_subplot(gs[5, :])
 
     # ===== Subplot 1: Loudness over time =====
     ax1.plot(t, short_term, lw=0.8, color="#1f77b4", label="Short-term loudness")
@@ -1052,7 +1061,7 @@ def _plot(result, out_path):
                 ax1.axhline(p10, color="#ff7f0e", ls=":", lw=1.0, alpha=0.7)
                 ax1.fill_between(t, p10, p95, alpha=0.1, color="#ff7f0e")
 
-    ax1.set_xlabel("Time (s)")
+    ax1.set_xlabel("")
     st_valid = short_term[short_term > _ABS_GATE_LUFS]
     y_top = math.ceil((np.max(st_valid) if st_valid.size else -5) / 5.0) * 5.0
     ax1.set_ylim(y_top - 50, y_top)
@@ -1060,8 +1069,33 @@ def _plot(result, out_path):
     ax1.set_title(f"Film loudness over time  -  LRA {result['lra_lu']:.1f} LU")
     ax1.grid(True, alpha=0.3)
     ax1.legend(loc="lower right", fontsize=9)
+    ax1.tick_params(labelbottom=False)  # x labels on strip instead
 
-    # ===== Subplot 2: Loudness Range Histogram =====
+    # ===== LFE activity strip =====
+    lfe_rms_db = result.get("lfe_rms_db")
+    if lfe_rms_db is not None and lfe_rms_db.size > 0:
+        t_lfe = np.arange(lfe_rms_db.size) * result["step_s"] + 1.5
+        # Clip to a sensible display range (−60 to 0 dBFS).
+        lfe_disp = np.clip(lfe_rms_db, -60.0, 0.0)
+        # Activity threshold from band analysis (if available).
+        ba = result.get("lfe_band_analysis")
+        thr = ba["threshold_dBFS"] if ba is not None else -999.0
+        active = lfe_rms_db >= thr
+        ax_lfe_strip.fill_between(t_lfe, -60.0, lfe_disp,
+                                  where=active,
+                                  color="#d62728", alpha=0.7, linewidth=0)
+        ax_lfe_strip.fill_between(t_lfe, -60.0, lfe_disp,
+                                  where=~active,
+                                  color="#888888", alpha=0.4, linewidth=0)
+        ax_lfe_strip.set_ylim(-60, 0)
+        ax_lfe_strip.set_ylabel("LFE\n(dBFS)", fontsize=7, labelpad=2)
+        ax_lfe_strip.yaxis.set_tick_params(labelsize=6)
+        ax_lfe_strip.set_yticks([-60, -30, 0])
+        ax_lfe_strip.grid(True, alpha=0.2)
+        ax_lfe_strip.set_xlabel("Time (s)")
+    else:
+        ax_lfe_strip.axis('off')
+        ax_lfe_strip.set_xlabel("Time (s)")
     # Apply the same two-stage gate as _loudness_range() / EBU Tech 3342:
     #   stage 1 – absolute gate at -70 LUFS
     #   stage 2 – relative gate at -20 LU below the mean of stage-1 values
