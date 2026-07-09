@@ -44,6 +44,7 @@ import sys
 
 import numpy as np
 import soundfile as sf
+from scipy.interpolate import PchipInterpolator
 from scipy.signal import lfilter, resample_poly, welch
 
 
@@ -371,7 +372,18 @@ def _frequency_response(audio_data, sr, fraction=24,
     if np.any(valid):
         band_db[valid] -= np.max(band_db[valid])
 
-    return band_freqs, band_db
+    # Interpolate onto a dense log-spaced grid so the plotted curve is smooth.
+    # PCHIP preserves monotonicity between support points and avoids the
+    # oscillations that cubic splines can produce near step transitions.
+    valid_mask = ~np.isnan(band_db)
+    n_valid = np.sum(valid_mask)
+    if n_valid >= 4:
+        log_x = np.log(band_freqs[valid_mask])
+        interp = PchipInterpolator(log_x, band_db[valid_mask])
+        fine_log_x = np.linspace(np.log(f_min), np.log(f_max), 500)
+        return np.exp(fine_log_x), interp(fine_log_x)
+
+    return band_freqs[valid_mask], band_db[valid_mask]
 
 
 
