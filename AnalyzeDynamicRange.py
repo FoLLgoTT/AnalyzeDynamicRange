@@ -1130,8 +1130,8 @@ def _plot(result, out_path):
     lfe_lines = ["LFE Band Analysis"]
     if ba is not None:
         lfe_lines.append(
-            f"  Active       {ba['global_activity_pct']:5.1f} % of runtime"
-            f"  ({_lfe_activity_label(ba['global_activity_pct'])})")
+            f"  Active {ba['global_activity_pct']:2.1f} % of runtime"
+            f" ({_lfe_activity_label(ba['global_activity_pct'])})")
         lfe_lines.append(f"  {'Band':<12} {'Act%':>5} {'P95':>6} {'Peak':>6}")
         for b in ba["bands"]:
             p95s = (f"{b['p95_rel']:+5.1f}" if not np.isnan(b["p95_rel"])
