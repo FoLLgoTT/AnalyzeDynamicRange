@@ -1055,7 +1055,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         data_ds, sr_ds, effective_layout,
         lfe_filtered=lfe_data_lfe_sr)
     del lfe_data_lfe_sr
-    _tick("Surround RMS relative to Center")
+    _tick("Channel RMS relative to Center")
 
     if surround_results:
         print("\n=== Channel RMS relative to Center ===")
