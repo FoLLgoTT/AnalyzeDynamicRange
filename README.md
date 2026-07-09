@@ -2,6 +2,8 @@
 
 A Python application for analyzing the dynamic range and loudness of movie audio files according to international broadcast standards.
 
+![example.png](https://github.com/FoLLgoTT/AnalyzeDynamicRange/blob/main/example.png)
+
 ## Overview
 
 `AnalyzeDynamicRange.py` analyzes audio files and calculates professional loudness metrics according to:
@@ -184,8 +186,6 @@ python AnalyzeDynamicRange.py *.wav --skip-existing
 ---
 
 ## Plot
-![example.png](https://github.com/FoLLgoTT/AnalyzeDynamicRange/blob/main/example.png)
-
 The plot is saved as a PNG (120 dpi) and contains **six panels**:
 
 ```
