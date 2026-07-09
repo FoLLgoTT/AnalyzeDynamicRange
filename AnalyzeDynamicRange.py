@@ -799,11 +799,11 @@ def _plot(result, out_path):
     fig = plt.figure(figsize=(14, 16), constrained_layout=True)
     gs = GridSpec(4, 2, figure=fig,
                   height_ratios=[1.1, 0.75, 0.75, 1.4],
-                  width_ratios=[2.6, 1])
+                  width_ratios=[4.5, 1])
     ax1 = fig.add_subplot(gs[0, :])       # loudness over time  – full width
     ax2 = fig.add_subplot(gs[1:3, 0])     # histogram           – left, 2 rows tall
-    ax4_lfe = fig.add_subplot(gs[1, 1])   # LFE metrics         – top right
-    ax4_rel = fig.add_subplot(gs[2, 1])   # channel RMS         – bottom right
+    ax4_rel = fig.add_subplot(gs[1, 1])   # channel RMS         – bottom right
+    ax4_lfe = fig.add_subplot(gs[2, 1])   # LFE metrics         – top right
     ax3 = fig.add_subplot(gs[3, :])
 
     # ===== Subplot 1: Loudness over time =====
