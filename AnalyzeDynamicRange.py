@@ -251,6 +251,45 @@ def _block_mean_square(weighted, sr, win_s, step_s):
     return (S[starts + win] - S[starts]) / win
 
 
+def _block_mean_square_multi(weighted, sr, windows_s, step_s):
+    """Compute block mean squares for multiple window sizes in a single pass.
+
+    Builds the float64 prefix-sum-of-squares array once and derives results
+    for each requested window size from it, halving RAM reads compared to
+    calling _block_mean_square() separately for each window size.
+
+    Parameters
+        weighted    K-weighted signal of shape (n_samples, n_channels).
+        sr          Sample rate in Hz.
+        windows_s   Sequence of window lengths in seconds (e.g. [0.4, 3.0]).
+        step_s      Shared hop size in seconds.
+
+    Returns
+        List of arrays, one per entry in *windows_s*, each of shape
+        (n_blocks, n_channels) in float64.
+    """
+    n_samples = weighted.shape[0]
+    n_ch = weighted.shape[1]
+    step = max(int(round(step_s * sr)), 1)
+
+    S = np.empty((n_samples + 1, n_ch), dtype=np.float64)
+    S[0] = 0.0
+    np.cumsum(np.square(weighted, dtype=np.float64), axis=0, out=S[1:])
+
+    results = []
+    for win_s in windows_s:
+        win = int(round(win_s * sr))
+        if win <= 0 or n_samples < win:
+            results.append(np.empty((0, n_ch), dtype=np.float64))
+            continue
+        starts = np.arange(0, n_samples - win + 1, step, dtype=np.intp)
+        if starts.size == 0:
+            results.append(np.empty((0, n_ch), dtype=np.float64))
+        else:
+            results.append((S[starts + win] - S[starts]) / win)
+    return results
+
+
 def _loudness_from_z(z, weights):
     """Convert per-block, per-channel mean square to block loudness (LUFS)."""
     summed = z @ weights
@@ -883,20 +922,16 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     weighted = _k_weight(data_ds, sr_ds)
     _tick("K-weighting")
 
-    # 400 ms momentary blocks (75% overlap) drive the integrated loudness.
-    z_400 = _block_mean_square(weighted, sr_ds, win_s=0.4, step_s=0.1)
+    # Compute 400 ms and 3 s block mean squares in a single prefix-sum pass.
+    z_400, z_3s = _block_mean_square_multi(
+        weighted, sr_ds, windows_s=[0.4, 3.0], step_s=0.1)
     integrated = _integrated_loudness(z_400, weights)
     momentary = _loudness_from_z(z_400, weights) if z_400.shape[0] else \
         np.array([])
-    _tick("Block mean square 400 ms + integrated loudness")
-
-    # 3 s short-term blocks drive the LRA and the time-series plot.
-    z_3s = _block_mean_square(weighted, sr_ds, win_s=3.0, step_s=0.1)
     short_term = _loudness_from_z(z_3s, weights) if z_3s.shape[0] else \
         np.array([])
     lra = _loudness_range(short_term)
-
-    _tick("Block mean square 3 s + LRA")
+    _tick("Block mean square 400 ms + 3 s + loudness")
 
     del weighted
     gc.collect()
