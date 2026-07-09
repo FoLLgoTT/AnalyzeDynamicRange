@@ -329,7 +329,6 @@ def _downsample(data, sr, target_sr):
         return resample_poly(data, up, down).astype(data.dtype), target_sr
 
     n_ch = data.shape[1]
-    out_len = len(resample_poly(data[:1, 0], up, down))  # probe output length
 
     def _resample_ch(ch):
         return resample_poly(data[:, ch], up, down)
@@ -337,6 +336,7 @@ def _downsample(data, sr, target_sr):
     with ThreadPoolExecutor(max_workers=n_ch) as ex:
         cols = list(ex.map(_resample_ch, range(n_ch)))
 
+    out_len = len(cols[0])
     result = np.empty((out_len, n_ch), dtype=data.dtype)
     for ch, col in enumerate(cols):
         result[:, ch] = col
