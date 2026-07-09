@@ -298,33 +298,6 @@ def _downsample(data, sr, target_sr):
     return resample_poly(data, up, down, axis=0).astype(data.dtype), target_sr
 
 
-# DC offset above this linear threshold triggers a [WARN].
-_DC_OFFSET_WARN_LINEAR = 1e-4   # ≈ −80 dBFS
-
-
-def _dc_offset_per_channel(data):
-    """Compute the DC offset of every channel.
-
-    The DC offset is the arithmetic mean of all samples and represents a
-    constant bias in the signal.  Non-zero DC causes audible clicks at edit
-    points and can saturate output stages.
-
-    Parameters
-        data  Audio array of shape (n_samples, n_channels).
-
-    Returns
-        List of (channel_index, dc_linear, dc_dbfs) tuples, one per channel.
-        dc_linear is signed; dc_dbfs is computed from the absolute value.
-    """
-    results = []
-    for ch in range(data.shape[1]):
-        dc = float(np.mean(data[:, ch]))
-        dc_dbfs = 20.0 * np.log10(max(abs(dc), _EPS))
-        results.append((ch, dc, dc_dbfs))
-    return results
-
-
-
 _FREQ_RESPONSE_TARGET_SR = 800
 _FREQ_RESPONSE_F_MIN = 2.0
 _FREQ_RESPONSE_F_MAX = 200.0
@@ -957,19 +930,6 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         for label, rms_dbfs, rel_db in surround_results:
             print(f"  {label:<20}: {rel_db:+8.1f} dB")
 
-    # DC offset (at _LOUDNESS_SR; DC is frequency-zero and unaffected by
-    # resampling except for negligible filter-edge artefacts)
-    dc_offsets = _dc_offset_per_channel(data_ds)
-    any_dc_warn = any(abs(dc) >= _DC_OFFSET_WARN_LINEAR for _, dc, _ in dc_offsets)
-    _tick("DC offset")
-    print("\n=== DC Offset ===")
-    print(f"  Warning threshold: {20.0 * np.log10(_DC_OFFSET_WARN_LINEAR):.0f} dBFS")
-    for ch_idx, dc_lin, dc_dbfs in dc_offsets:
-        if abs(dc_lin) >= _DC_OFFSET_WARN_LINEAR:
-            print(f"  Channel {ch_idx + 1:2d}: {dc_dbfs:6.1f} dBFS [WARNING]")
-    if not any_dc_warn:
-        print("  All channels within acceptable range.")
-
     # -----------------------------------------------------------------------
     # Pipeline timing summary (only with --debug)
     # -----------------------------------------------------------------------
@@ -996,7 +956,6 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         "lfe_band_analysis": lfe_band_result,
         "center_rms_dbfs": center_dbfs,
         "surround_rms": surround_results,
-        "dc_offsets": dc_offsets,
         # Compact excerpt for the frequency-response plot.  The full-resolution
         # audio is no longer retained after the downsample step above.
         "freq_audio": freq_audio,

@@ -22,7 +22,6 @@ These standards are internationally recognized and used in the film industry, st
 | **RMS Level** | dBFS | Overall RMS across all channels |
 | **Momentary Loudness** | LUFS | Time series over 400 ms windows |
 | **Short-term Loudness** | LUFS | Time series over 3-second windows |
-| **DC Offset** | dBFS | Per-channel mean signal bias |
 
 ### LFE Band Analysis (120 Hz low-pass applied before all measurements)
 
@@ -292,15 +291,6 @@ The LRA is the difference between the **95th and 10th percentile** of the remain
 | 25 - 30 LU | High|
 | >30 LU | Very high|
 
-### DC Offset (dBFS per channel)
-
-The arithmetic mean of all samples in a channel. Non-zero DC causes audible clicks at edit points and can saturate output stages.
-
-| Level | Assessment |
-|---|---|
-| < −80 dBFS (< 1×10⁻⁴ linear) | Acceptable |
-| ≥ −80 dBFS | [WARN] DC offset present — apply a high-pass filter |
-
 ---
 
 ## LFE Channel Analysis
@@ -389,7 +379,7 @@ All formats supported by `libsndfile` / `soundfile`:
 
 The script loads the entire file into RAM at the original sample rate. The following optimisations keep peak RAM well below the raw-file size:
 
-1. The entire audio is **downsampled to 16 kHz** immediately after reading. All metrics (K-weighted loudness, LRA, RMS, LFE loudness/crest, surround RMS, DC offset) are computed from this compact representation. The downsampled copy is ~3× smaller for a 48 kHz source.
+1. The entire audio is **downsampled to 16 kHz** immediately after reading. All metrics (K-weighted loudness, LRA, RMS, LFE loudness/crest, surround RMS) are computed from this compact representation. The downsampled copy is ~3× smaller for a 48 kHz source.
 2. The **original full-resolution array is immediately freed** after the downsampling step.
 3. The **frequency-response plot** uses 16 kHz, so no large array is retained after analysis.
 
