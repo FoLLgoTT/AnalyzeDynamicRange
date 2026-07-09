@@ -45,7 +45,7 @@ import sys
 import numpy as np
 import soundfile as sf
 from scipy.interpolate import PchipInterpolator
-from scipy.signal import lfilter, resample_poly, welch
+from scipy.signal import butter, lfilter, resample_poly, sosfiltfilt, welch
 
 
 # Absolute silence floor used for log conversions to avoid log10(0).
@@ -387,6 +387,36 @@ def _frequency_response(audio_data, sr, fraction=24,
 
 
 
+_LFE_LOWPASS_HZ = 120.0
+_LFE_LOWPASS_ORDER = 4
+
+_SURROUND_HIGHPASS_HZ = 80.0
+_SURROUND_HIGHPASS_ORDER = 4
+
+
+def _lfe_lowpass(data_lfe, sr):
+    """Apply a zero-phase Butterworth low-pass filter at _LFE_LOWPASS_HZ to
+    the LFE channel before any metric is computed.
+
+    A zero-phase (forward-backward) filter is used so that no phase distortion
+    is introduced, which keeps time-domain peak measurements accurate.
+
+    Parameters
+        data_lfe  LFE channel data (1D float array).
+        sr        Sample rate in Hz.
+
+    Returns
+        Filtered copy of data_lfe.
+    """
+    nyquist = sr / 2.0
+    if _LFE_LOWPASS_HZ >= nyquist:
+        return data_lfe
+
+    sos = butter(_LFE_LOWPASS_ORDER, _LFE_LOWPASS_HZ / nyquist,
+                 btype='low', output='sos')
+    return sosfiltfilt(sos, data_lfe)
+
+
 def _lfe_loudness(data_lfe, sr):
     """Measure LFE channel loudness separately (LUFS).
 
@@ -453,6 +483,89 @@ def _lfe_activity(data_lfe, threshold_dbfs=-50):
     return activity_percent
 
 
+def _surround_highpass(data_ch, sr):
+    """Apply a zero-phase Butterworth high-pass filter at _SURROUND_HIGHPASS_HZ.
+
+    Parameters
+        data_ch  Single channel audio data (1D float array).
+        sr       Sample rate in Hz.
+
+    Returns
+        Filtered copy of data_ch.
+    """
+    nyquist = sr / 2.0
+    if _SURROUND_HIGHPASS_HZ >= nyquist:
+        return data_ch
+
+    sos = butter(_SURROUND_HIGHPASS_ORDER, _SURROUND_HIGHPASS_HZ / nyquist,
+                 btype='high', output='sos')
+    return sosfiltfilt(sos, data_ch)
+
+
+def _surround_rms_relative_to_center(data, sr, effective_layout):
+    """Measure surround channel RMS levels relative to the center channel.
+
+    The surround channels are high-pass filtered at _SURROUND_HIGHPASS_HZ
+    before measurement to exclude bass content that is not representative of
+    surround level.  The center channel is measured unfiltered.
+
+    Channel mapping per layout (0-based):
+        5.1 / 6.1 : Ls = 4, Rs = 5
+        7.1        : Lrs = 6, Rrs = 7
+
+    Parameters
+        data              Full audio array of shape (n_samples, n_channels).
+        sr                Sample rate in Hz.
+        effective_layout  Resolved layout string: "5.1", "6.1", "7.1", or
+                          "auto".
+
+    Returns
+        Tuple (center_dbfs, surround_results) where surround_results is a
+        list of (label, rms_dbfs, rel_db) for each surround channel, or
+        (nan, []) if not applicable.
+    """
+    n_ch = data.shape[1]
+    center_idx = 2
+
+    if n_ch < 6 or center_idx >= n_ch:
+        return float("nan"), []
+
+    if effective_layout == "7.1":
+        surround_map = [
+            (4, "Ls   (Ch 5)"),
+            (5, "Rs   (Ch 6)"),
+            (6, "Lrs  (Ch 7)"),
+            (7, "Rrs  (Ch 8)"),
+        ]
+    elif effective_layout == "6.1":
+        surround_map = [
+            (4, "Ls   (Ch 5)"),
+            (5, "Rs   (Ch 6)"),
+            (6, "Rc   (Ch 7)"),
+        ]
+    else:
+        surround_map = [
+            (4, "Ls   (Ch 5)"),
+            (5, "Rs   (Ch 6)"),
+        ]
+
+    surround_map = [(i, lbl) for i, lbl in surround_map if i < n_ch]
+    if not surround_map:
+        return float("nan"), []
+
+    center_rms = np.sqrt(np.mean(np.square(data[:, center_idx])))
+    center_dbfs = 20.0 * np.log10(max(float(center_rms), _EPS))
+
+    results = []
+    for ch_idx, label in surround_map:
+        filtered = _surround_highpass(data[:, ch_idx], sr)
+        rms = np.sqrt(np.mean(np.square(filtered)))
+        rms_dbfs = 20.0 * np.log10(max(float(rms), _EPS))
+        results.append((label, rms_dbfs, rms_dbfs - center_dbfs))
+
+    return center_dbfs, results
+
+
 def analyze(path, layout=None, lfe_channel=None, per_channel=False,
             exclude_surround=False):
     """Analyse the dynamic range / loudness of an audio file.
@@ -471,6 +584,18 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     """
     data, sr = sf.read(path, dtype="float64", always_2d=True)
     n_ch = data.shape[1]
+
+    # Resolve effective layout once so it can be reused throughout.
+    if layout is not None:
+        effective_layout = layout
+    elif n_ch == 6:
+        effective_layout = "5.1"
+    elif n_ch == 7:
+        effective_layout = "6.1"
+    elif n_ch >= 8:
+        effective_layout = "7.1"
+    else:
+        effective_layout = "auto"
 
     print(f"File         : {path}")
     print(f"Sample rate  : {sr} Hz")
@@ -564,7 +689,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         lfe_idx = lfe_channel
 
     if lfe_idx is not None:
-        lfe_data = data[:, lfe_idx]
+        lfe_data = _lfe_lowpass(data[:, lfe_idx], sr)
         lfe_loudness = _lfe_loudness(lfe_data, sr)
         lfe_peak = _lfe_true_peak_dbtp(lfe_data, sr)
         lfe_rms = _lfe_rms_dbfs(lfe_data)
@@ -572,6 +697,8 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         lfe_activity = _lfe_activity(lfe_data)
 
         print("\n=== LFE Channel Analysis ===")
+        print(f"  Low-pass filter     : {_LFE_LOWPASS_HZ:.0f} Hz "
+              f"(Butterworth order {_LFE_LOWPASS_ORDER}, zero-phase)")
         print(f"  LFE loudness        : {lfe_loudness:8.2f} LUFS")
         if not np.isnan(integrated) and not np.isnan(lfe_loudness):
             lfe_ratio = lfe_loudness - integrated
@@ -592,6 +719,18 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
                 print(f"  [INFO] LFE very quiet ({ratio:.1f} dB) - check if "
                       f"intentional.")
 
+    # Surround channel RMS relative to center
+    center_dbfs, surround_results = _surround_rms_relative_to_center(
+        data, sr, effective_layout)
+
+    if surround_results:
+        print("\n=== Surround Channel Analysis ===")
+        print(f"  High-pass filter    : {_SURROUND_HIGHPASS_HZ:.0f} Hz "
+              f"(Butterworth order {_SURROUND_HIGHPASS_ORDER}, zero-phase)")
+        print(f"  Center (Ch 3)       : {center_dbfs:8.2f} dBFS  (reference, unfiltered)")
+        for label, rms_dbfs, rel_db in surround_results:
+            print(f"  {label}     : {rms_dbfs:8.2f} dBFS  {rel_db:+.2f} dB rel. Center")
+
     return {
         "sr": sr,
         "n_channels": n_ch,
@@ -608,6 +747,8 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         "lfe_rms_dbfs": lfe_rms,
         "lfe_crest_factor": lfe_crest,
         "lfe_activity_percent": lfe_activity,
+        "center_rms_dbfs": center_dbfs,
+        "surround_rms": surround_results,
         "audio_data": data,  # Raw audio for frequency analysis
     }
 
