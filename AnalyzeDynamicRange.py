@@ -48,7 +48,7 @@ import time
 import numpy as np
 import soundfile as sf
 from scipy.interpolate import PchipInterpolator
-from scipy.signal import butter, lfilter, resample_poly, sosfiltfilt, welch
+from scipy.signal import butter, lfilter, resample_poly, sosfilt, sosfiltfilt, welch
 
 
 # Absolute silence floor used for log conversions to avoid log10(0).
@@ -554,13 +554,20 @@ def _surround_highpass(data_ch, sr):
     return sosfiltfilt(sos, data_ch)
 
 
-def _surround_rms_relative_to_center(data, sr, effective_layout):
+def _surround_rms_relative_to_center(data, sr, effective_layout,
+                                      lfe_filtered=None):
     """Measure all channel RMS levels relative to the center channel.
 
     Filter applied per channel type:
         L / R              : unfiltered
-        LFE                : low-pass at _LFE_LOWPASS_HZ
+        LFE                : low-pass at _LFE_LOWPASS_HZ (uses lfe_filtered
+                             if supplied to avoid redundant computation)
         Ls / Rs / Rc / Lrs / Rrs : high-pass at _SURROUND_HIGHPASS_HZ
+
+    Surround high-pass uses a single forward pass (sosfilt) instead of the
+    zero-phase forward-backward pass (sosfiltfilt).  For RMS-only metrics the
+    startup transient is negligible (< 1000 samples vs. tens of millions) and
+    the speed gain is roughly 2x per channel.
 
     The center channel (index 2) is the unfiltered reference.
 
@@ -576,6 +583,8 @@ def _surround_rms_relative_to_center(data, sr, effective_layout):
         sr                Sample rate in Hz.
         effective_layout  Resolved layout string: "5.1", "6.1", "7.1", or
                           "auto".
+        lfe_filtered      Optional pre-filtered LFE channel (1D array).
+                          When supplied the LFE low-pass step is skipped.
 
     Returns
         Tuple (center_dbfs, results) where results is a list of
@@ -619,15 +628,29 @@ def _surround_rms_relative_to_center(data, sr, effective_layout):
 
     channel_map = [(i, lbl, flt) for i, lbl, flt in channel_map if i < n_ch]
 
+    # Pre-compute the high-pass SOS once for all surround channels.
+    nyquist = sr / 2.0
+    hp_sos = None
+    if any(flt == "highpass" for _, _, flt in channel_map):
+        if _SURROUND_HIGHPASS_HZ < nyquist:
+            hp_sos = butter(_SURROUND_HIGHPASS_ORDER,
+                            _SURROUND_HIGHPASS_HZ / nyquist,
+                            btype='high', output='sos')
+
     center_rms = np.sqrt(np.mean(np.square(data[:, center_idx])))
     center_dbfs = 20.0 * np.log10(max(float(center_rms), _EPS))
 
     results = []
     for ch_idx, label, flt in channel_map:
         if flt == "lowpass":
-            ch_data = _lfe_lowpass(data[:, ch_idx], sr)
+            # Re-use externally filtered LFE when available.
+            ch_data = (lfe_filtered if lfe_filtered is not None
+                       else _lfe_lowpass(data[:, ch_idx], sr))
         elif flt == "highpass":
-            ch_data = _surround_highpass(data[:, ch_idx], sr)
+            # Single forward pass is sufficient for RMS (~2x faster than
+            # zero-phase sosfiltfilt; startup transient is negligible).
+            ch_data = (sosfilt(hp_sos, data[:, ch_idx])
+                       if hp_sos is not None else data[:, ch_idx])
         else:
             ch_data = data[:, ch_idx]
         rms = np.sqrt(np.mean(np.square(ch_data)))
@@ -813,6 +836,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     lfe_rms = float("nan")
     lfe_crest = float("nan")
     lfe_activity = float("nan")
+    lfe_data_ds = None  # kept alive until after _surround_rms_relative_to_center
 
     if lfe_idx is not None:
         lfe_data_ds = _lfe_lowpass(data_ds[:, lfe_idx], sr_ds)
@@ -820,7 +844,6 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         lfe_rms = _lfe_rms_dbfs(lfe_data_ds)
         lfe_crest = _lfe_crest_factor(lfe_data_ds)
         lfe_activity = _lfe_activity(lfe_data_ds)
-        del lfe_data_ds
     _tick("LFE loudness / crest / activity")
 
     if lfe_idx is not None:
@@ -844,9 +867,11 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
                 print(f"  [INFO] LFE very quiet ({ratio:.1f} dB) - check if "
                       f"intentional.")
 
-    # Surround channel RMS relative to center (at _LOUDNESS_SR)
+    # Surround channel RMS relative to center (at _LOUDNESS_SR).
+    # Pass the already filtered LFE signal to avoid a redundant low-pass pass.
     center_dbfs, surround_results = _surround_rms_relative_to_center(
-        data_ds, sr_ds, effective_layout)
+        data_ds, sr_ds, effective_layout, lfe_filtered=lfe_data_ds)
+    del lfe_data_ds
     _tick("Surround RMS relative to Center")
 
     if surround_results:
@@ -854,7 +879,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         print(f"  Low-pass  (LFE)     : {_LFE_LOWPASS_HZ:.0f} Hz "
               f"(Butterworth order {_LFE_LOWPASS_ORDER}, zero-phase)")
         print(f"  High-pass (surround): {_SURROUND_HIGHPASS_HZ:.0f} Hz "
-              f"(Butterworth order {_SURROUND_HIGHPASS_ORDER}, zero-phase)")
+              f"(Butterworth order {_SURROUND_HIGHPASS_ORDER}, single-pass)")
         print(f"  C    (Ch 3)         : {center_dbfs:8.1f} dBFS  (reference, unfiltered)")
         for label, rms_dbfs, rel_db in surround_results:
             print(f"  {label}     : {rms_dbfs:8.1f} dBFS  {rel_db:+.1f} dB rel. C")
