@@ -18,7 +18,7 @@ These standards are internationally recognized and used in the film industry, st
 | Metric | Unit | Description |
 |--------|------|-------------|
 | **Integrated Loudness** | LUFS | Gated programme loudness across the entire file |
-| **Loudness Range (LRA)** | LU | Dynamic range per EBU Tech 3342 |
+| **Loudness Range (LRA)** | LU | Dynamic range per [EBU Tech 3342](https://tech.ebu.ch/docs/tech/tech3342.pdf) |
 | **RMS Level** | dBFS | Overall RMS across all channels |
 | **Momentary Loudness** | LUFS | Time series over 400 ms windows |
 | **Short-term Loudness** | LUFS | Time series over 3-second windows |
