@@ -24,14 +24,29 @@ These standards are internationally recognized and used in the film industry, st
 | **Short-term Loudness** | LUFS | Time series over 3-second windows |
 | **DC Offset** | dBFS | Per-channel mean signal bias |
 
-### LFE Channel Metrics (120 Hz low-pass applied before all measurements)
+### LFE Band Analysis (120 Hz low-pass applied before all measurements)
+
+The LFE channel is divided into four frequency bands. All level metrics are expressed **relative to the main-mix integrated loudness** so results are comparable across films with different overall levels. Statistics are computed only over LFE-active windows (short-term RMS ≥ integrated − 30 dB) to prevent long silent passages from distorting the results.
 
 | Metric | Unit | Description |
 |--------|------|-------------|
-| **LFE Loudness** | LUFS | Integrated loudness of the LFE channel |
-| **LFE-to-Main Ratio** | dB | Level difference between LFE and main mix |
-| **LFE RMS** | dBFS | RMS level of the LFE channel |
-| **LFE Crest Factor** | dB | Peak-to-RMS ratio of LFE |
+| **LFE active** | % of runtime | Fraction of 400 ms windows where full-band LFE exceeds the activity threshold |
+| **Band activity** | % of active windows | Per band: fraction of LFE-active windows where that band also exceeds the threshold |
+| **P95 level** | dB rel. main | 95th percentile short-term level of the band over active windows |
+| **Peak level** | dB rel. main | Maximum short-term level of the band over active windows |
+| **Peak−P95 spread** | dB | Dynamic headroom within active moments |
+| **Sub-bass ratio** | dB | Energy in 20–40 Hz relative to 40–120 Hz; indicates how "deep" the bass is |
+| **Infrasound ratio** | dB | Energy below 20 Hz relative to 20–120 Hz; flags artefacts or intentional infrasound |
+| **Spectral centroid** | Hz | Energy-weighted mean frequency of the 20–120 Hz content over active windows |
+
+Frequency bands:
+
+| Band | Range | Perception |
+|---|---|---|
+| Infrasound | < 20 Hz | Not audible; pressure/vibration sensation or artefact |
+| Sub-bass | 20–40 Hz | Mainly tactile (body sensation, bass shakers) |
+| Bass | 40–80 Hz | Heard and felt; core LFE impact |
+| Upper LFE | 80–120 Hz | Mainly audible; crossover region to main speakers |
 
 ### Channel Level Metrics (relative to Center)
 
@@ -199,9 +214,9 @@ The plot is saved as a PNG (120 dpi) and contains **four panels**:
 
 Both the bounds and the title value are computed using the same double-gating logic as `_loudness_range()`, so the LRA shown in both panels is always identical.
 
-### Panel 3 — LFE Channel Analysis
+### Panel 3 — LFE Band Analysis
 
-Text box showing all LFE metrics (loudness, LFE/Main ratio, RMS, crest factor).
+Text box showing the LFE band analysis: overall activity (% of runtime), per-band activity / P95 / Peak levels (relative to main integrated loudness), sub-bass ratio with depth category, and spectral centroid.
 
 ### Panel 4 — Channel RMS relative to Center
 
@@ -292,13 +307,42 @@ The arithmetic mean of all samples in a channel. Non-zero DC causes audible clic
 
 The LFE channel is analyzed **after** applying a zero-phase Butterworth low-pass filter at **120 Hz** (order 4). Zero-phase filtering prevents time-domain phase distortion and keeps peak measurements accurate.
 
-### LFE-to-Main Ratio guidelines
+### Activity gating
 
-| Ratio | Assessment |
+Long silent passages in the LFE channel would distort statistical metrics such as P95 or spectral centroid. A 400 ms sliding window is classified as *active* if the full-band LFE short-term RMS exceeds:
+
+```
+threshold = integrated_main − 30 dB
+```
+
+All per-band level statistics and energy ratios are computed exclusively over active windows. The overall activity percentage (shown in the header) indicates how much of the runtime contains meaningful LFE content.
+
+### Sub-bass ratio
+
+Measures the spectral balance between the deepest and the mid-bass range:
+
+```
+Sub-bass ratio = 10 × log10( E(20–40 Hz) / E(40–120 Hz) )
+```
+
+| Ratio | Category |
 |---|---|
-| > −6 dB | LFE too loud |
-| −8 to −12 dB | Ideal range |
-| < −15 dB | LFE very quiet |
+| > 0 dB | very deep |
+| > −3 dB | deep |
+| > −6 dB | moderate |
+| ≤ −6 dB | shallow |
+
+### Infrasound ratio
+
+```
+Infrasound ratio = 10 × log10( E(<20 Hz) / E(20–120 Hz) )
+```
+
+A ratio above −20 dB with sustained infrasound activity (> 10 % of active windows) triggers a `[WARN]` and may indicate recording artefacts (wind noise, mechanical rumble) or, in rare cases, intentional infrasound design.
+
+### Spectral centroid
+
+The energy-weighted mean frequency of the 20–120 Hz content over active windows. A centroid below ~45 Hz indicates primarily tactile sub-bass content; above ~70 Hz the LFE is dominated by mid-bass punch rather than deep extension.
 
 ---
 

@@ -925,9 +925,9 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         print()
         if not np.isnan(ba["sub_bass_ratio_db"]):
             r = ba["sub_bass_ratio_db"]
-            depth = ("very deep" if r > -3 else
-                     "deep" if r > -6 else
-                     "moderate depth" if r > -12 else "shallow")
+            depth = ("very deep" if r > 0 else
+                     "deep" if r > -3 else
+                     "moderate" if r > -6 else "shallow")
             print(f"  Sub-bass ratio  (20–40 / 40–120 Hz): {r:+.1f} dB"
                   f"  [{depth}]")
         if not np.isnan(ba["infra_ratio_db"]):
@@ -1153,8 +1153,6 @@ def _plot(result, out_path):
     if ba is not None:
         lfe_lines.append(
             f"  Active       {ba['global_activity_pct']:5.1f} % of runtime")
-        lfe_lines.append(
-            f"  Threshold    {ba['threshold_dBFS']:+5.1f} dBFS")
         lfe_lines.append(f"  {'Band':<12} {'Act%':>5} {'P95':>6} {'Peak':>6}")
         for b in ba["bands"]:
             p95s = (f"{b['p95_rel']:+5.1f}" if not np.isnan(b["p95_rel"])
@@ -1164,8 +1162,12 @@ def _plot(result, out_path):
             lfe_lines.append(
                 f"  {b['label']:<12} {b['activity_pct']:5.1f} {p95s} {pks}")
         if not np.isnan(ba["sub_bass_ratio_db"]):
+            r = ba["sub_bass_ratio_db"]
+            depth = ("very deep" if r > 0 else
+                     "deep" if r > -3 else
+                     "moderate" if r > -6 else "shallow")
             lfe_lines.append(
-                f"  Sub-bass ratio {ba['sub_bass_ratio_db']:+.1f} dB")
+                f"  Sub-bass ratio {r:+.1f} dB ({depth})")
         if not np.isnan(ba.get("spectral_centroid_hz", float("nan"))):
             lfe_lines.append(
                 f"  Centroid    {ba['spectral_centroid_hz']:.0f} Hz")
