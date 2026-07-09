@@ -799,7 +799,7 @@ def _plot(result, out_path):
     fig = plt.figure(figsize=(14, 16), constrained_layout=True)
     gs = GridSpec(4, 2, figure=fig,
                   height_ratios=[1.1, 0.75, 0.75, 1.4],
-                  width_ratios=[1.7, 1])
+                  width_ratios=[2.6, 1])
     ax1 = fig.add_subplot(gs[0, :])       # loudness over time  – full width
     ax2 = fig.add_subplot(gs[1:3, 0])     # histogram           – left, 2 rows tall
     ax4_lfe = fig.add_subplot(gs[1, 1])   # LFE metrics         – top right
@@ -927,11 +927,9 @@ def _plot(result, out_path):
     center_dbfs = result["center_rms_dbfs"]
     rel_lines = ["Channel RMS relative to Center"]
     if not (isinstance(center_dbfs, float) and np.isnan(center_dbfs)):
-        rel_lines.append(
-            f"  {'C  (Ch 3)':<12}  {center_dbfs:7.2f} dBFS  [ref]")
-        for label, rms_dbfs, rel_db in surround_results:
-            rel_lines.append(
-                f"  {label:<12}  {rms_dbfs:7.2f} dBFS  {rel_db:+.2f} dB")
+        rel_lines.append(f"  {'C  (Ch 3)':<12}  [ref]")
+        for label, _rms_dbfs, rel_db in surround_results:
+            rel_lines.append(f"  {label:<12}  {rel_db:+.2f} dB")
 
     ax4_rel.axis('off')
     ax4_rel.text(0.03, 0.97, "\n".join(rel_lines),
