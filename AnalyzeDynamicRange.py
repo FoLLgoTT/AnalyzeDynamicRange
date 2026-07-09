@@ -43,7 +43,7 @@ import sys
 
 import numpy as np
 import soundfile as sf
-from scipy.signal import lfilter, resample_poly
+from scipy.signal import lfilter, resample_poly, welch
 
 
 # Absolute silence floor used for log conversions to avoid log10(0).
@@ -304,57 +304,52 @@ def _rms_dbfs(data):
     return 20.0 * np.log10(max(float(rms), _EPS))
 
 
-def _frequency_response(audio_data, sr, target_sr=1000, freq_min=1, freq_max=200):
-    """Calculate frequency response magnitude spectrum in dBFS.
+def _frequency_response(audio_data, sr, fraction=24, f_min=20.0, f_max=20000.0):
+    """Calculate the fractional-octave-smoothed frequency response in dB.
+
+    Uses Welch's averaged periodogram for a robust PSD estimate, then averages
+    into 1/fraction-octave bands.  The result is normalized so the peak band
+    sits at 0 dB, making it easy to overlay curves from different channels.
 
     Parameters
-        audio_data    Audio signal (1D array).
-        sr            Original sample rate in Hz.
-        target_sr     Target sample rate for analysis (Hz).
-        freq_min      Minimum frequency to analyze (Hz).
-        freq_max      Maximum frequency to analyze (Hz).
+        audio_data  Audio signal (1D float array).
+        sr          Sample rate in Hz.
+        fraction    Octave fraction for smoothing (24 = 1/24 octave).
+        f_min       Lowest band centre frequency in Hz.
+        f_max       Highest band centre frequency in Hz.
 
     Returns
-        Tuple of (frequencies, magnitudes_dbfs)
-        frequencies are in Hz, magnitudes in dBFS
+        Tuple (band_freqs, band_db) — band centre frequencies in Hz and the
+        corresponding 0 dB-normalized power level per band.
     """
-    # Downsample to target sample rate if needed
-    if sr != target_sr:
-        # Calculate downsampling ratio
-        ratio = sr / target_sr
-        if ratio > 1:
-            # Downsample by integer factor or resample
-            n_samples_downsampled = int(len(audio_data) / ratio)
-            audio_downsampled = resample_poly(audio_data, target_sr, sr)
-        else:
-            audio_downsampled = audio_data
-    else:
-        audio_downsampled = audio_data
-        target_sr = sr
+    f_max = min(f_max, sr / 2.0 * 0.95)
 
-    # Apply FFT
-    fft_result = np.fft.fft(audio_downsampled)
-    freqs = np.fft.fftfreq(len(fft_result), 1 / target_sr)
+    nperseg = min(len(audio_data), 2 ** 17)
+    freqs, psd = welch(audio_data, fs=sr, nperseg=nperseg, window='hann',
+                       noverlap=nperseg // 2, scaling='density')
 
-    # Only take positive frequencies
-    positive_freq_mask = freqs > 0
-    freqs = freqs[positive_freq_mask]
-    magnitudes = np.abs(fft_result[positive_freq_mask])
+    # Build 1/fraction-octave centre-frequency grid
+    half_bw = 2.0 ** (1.0 / (2.0 * fraction))
+    n_bands = int(np.ceil(np.log2(f_max / f_min) * fraction)) + 1
+    band_freqs = f_min * 2.0 ** (np.arange(n_bands) / fraction)
+    band_freqs = band_freqs[band_freqs <= f_max]
 
-    # Convert to dBFS (normalize by maximum value and full-scale)
-    # Assuming audio is normalized to [-1, 1]
-    max_magnitude = np.max(magnitudes)
-    if max_magnitude > 0:
-        magnitudes_dbfs = 20.0 * np.log10(magnitudes / max_magnitude)
-    else:
-        magnitudes_dbfs = np.full_like(magnitudes, -np.inf)
+    # Average PSD within each band (using searchsorted for speed)
+    band_psd = np.full(len(band_freqs), np.nan)
+    for i, fc in enumerate(band_freqs):
+        i_low = np.searchsorted(freqs, fc / half_bw)
+        i_high = np.searchsorted(freqs, fc * half_bw, side='right')
+        if i_high > i_low:
+            band_psd[i] = np.mean(psd[i_low:i_high])
 
-    # Filter to requested frequency range
-    freq_mask = (freqs >= freq_min) & (freqs <= freq_max)
-    freqs = freqs[freq_mask]
-    magnitudes_dbfs = magnitudes_dbfs[freq_mask]
+    # Convert to dB and normalize to 0 dB peak
+    valid = ~np.isnan(band_psd)
+    band_db = np.full(len(band_freqs), np.nan)
+    band_db[valid] = 10.0 * np.log10(np.maximum(band_psd[valid], _EPS))
+    if np.any(valid):
+        band_db[valid] -= np.max(band_db[valid])
 
-    return freqs, magnitudes_dbfs
+    return band_freqs, band_db
 
 
 
@@ -666,28 +661,33 @@ def _plot(result, out_path):
     sr = result["sr"]
     n_ch = result["n_channels"]
 
-    # Get Center channel (index 2) and LFE channel (index 3)
     center_idx = 2 if n_ch > 2 else None
     lfe_idx = 3 if n_ch > 3 else None
 
+    freq_max_plot = min(20000.0, sr / 2.0 * 0.95)
+
     if center_idx is not None and audio_data.shape[1] > center_idx:
-        center_data = audio_data[:, center_idx]
-        freqs_center, mag_center = _frequency_response(center_data, sr, target_sr=1000, 
-                                                        freq_min=1, freq_max=200)
-        ax3.plot(freqs_center, mag_center, lw=1.5, color="#1f77b4", label="Center (Ch 3)")
+        freqs_c, mag_c = _frequency_response(audio_data[:, center_idx], sr)
+        ax3.plot(freqs_c, mag_c, lw=1.0, color="#1f77b4", label="Center (Ch 3)")
 
     if lfe_idx is not None and audio_data.shape[1] > lfe_idx:
-        lfe_data = audio_data[:, lfe_idx]
-        freqs_lfe, mag_lfe = _frequency_response(lfe_data, sr, target_sr=1000,
-                                                  freq_min=1, freq_max=200)
-        ax3.plot(freqs_lfe, mag_lfe, lw=1.5, color="#d62728", label="LFE (Ch 4)")
+        freqs_l, mag_l = _frequency_response(audio_data[:, lfe_idx], sr)
+        ax3.plot(freqs_l, mag_l, lw=1.0, color="#d62728", label="LFE (Ch 4)")
+
+    ax3.set_xscale('log')
+    ax3.set_xlim(20, freq_max_plot)
+    ax3.set_ylim(-50, 2)
+
+    freq_ticks = [f for f in [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+                  if f <= freq_max_plot]
+    ax3.set_xticks(freq_ticks)
+    ax3.set_xticklabels([f"{f // 1000}k" if f >= 1000 else str(f) for f in freq_ticks])
 
     ax3.set_xlabel("Frequency (Hz)")
-    ax3.set_ylabel("Magnitude (dBFS)")
-    ax3.set_xlim(1, 200)
-    ax3.set_title("Frequency Response: Center vs LFE (1kHz resampling)")
-    ax3.grid(True, alpha=0.3)
-    ax3.legend(loc="upper right", fontsize=9)
+    ax3.set_ylabel("Magnitude (dB, normalized)")
+    ax3.set_title("Frequency Response: Center vs LFE (1/24 octave smoothing)")
+    ax3.grid(True, alpha=0.3, which='both')
+    ax3.legend(loc="lower left", fontsize=9)
 
     fig.tight_layout()
     fig.savefig(out_path, dpi=120)
