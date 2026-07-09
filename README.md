@@ -260,6 +260,7 @@ Text box showing the RMS level of each channel relative to the unfiltered Center
 
 ### Panel 5 — Frequency Response
 
+- Green curve: Left channel (Ch 1)
 - Blue curve: Center channel (Ch 3)
 - Red curve: LFE channel (Ch 4)
 - X-axis: 1–200 Hz, **logarithmic**

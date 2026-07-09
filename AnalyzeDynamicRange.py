@@ -740,7 +740,9 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     ex_end = ex_start + n_excerpt
 
     freq_audio: dict = {}
+    left_col = 0
     center_col = 2 if n_ch > 2 else 0
+    freq_audio["left"] = data_ds[ex_start:ex_end, left_col].copy()
     freq_audio["center"] = data_ds[ex_start:ex_end, center_col].copy()
     if lfe_idx is not None and lfe_idx < data_ds.shape[1]:
         freq_audio["lfe"] = data_ds[ex_start:ex_end, lfe_idx].copy()
@@ -930,7 +932,7 @@ def _plot(result, out_path):
     # Layout:  row 0 – loudness curve (full width)
     #          row 1 – histogram (left) | metrics panel (right)
     #          row 2 – frequency response (full width)
-    fig = plt.figure(figsize=(14, 19.79), constrained_layout=True)
+    fig = plt.figure(figsize=(12, 16.97), constrained_layout=True)
     gs = GridSpec(4, 2, figure=fig,
                   height_ratios=[1.3, 0.5, 0.75, 2.0],
                   width_ratios=[4.5, 1])
@@ -1014,11 +1016,15 @@ def _plot(result, out_path):
         ax2.legend(loc="upper right", fontsize=9)
         ax2.set_xlim(x_lo, x_hi)
 
-    # ===== Subplot 3: Frequency Response (Center vs LFE) =====
+    # ===== Subplot 3: Frequency Response =====
     # freq_audio contains a compact excerpt extracted at _LOUDNESS_SR so that
     # the full-resolution audio does not need to be kept alive for the plot.
     freq_audio = result.get("freq_audio", {})
     freq_sr = freq_audio.get("sr", result["sr"])
+
+    if "left" in freq_audio:
+        freqs_c, mag_c = _frequency_response(freq_audio["left"], freq_sr)
+        ax3.plot(freqs_c, mag_c, lw=1.0, color="#1fb477", label="Left")
 
     if "center" in freq_audio:
         freqs_c, mag_c = _frequency_response(freq_audio["center"], freq_sr)
