@@ -1053,7 +1053,7 @@ def _plot(result, out_path):
 
     ax1.set_xlabel("Time (s)")
     st_valid = short_term[short_term > _ABS_GATE_LUFS]
-    y_top = math.ceil((np.max(st_valid) if st_valid.size else -5) / 5.0) * 5.0 + 5
+    y_top = math.ceil((np.max(st_valid) if st_valid.size else -5) / 5.0) * 5.0
     ax1.set_ylim(y_top - 50, y_top)
     ax1.set_ylabel("Loudness (LUFS)")
     ax1.set_title(f"Film loudness over time  -  LRA {result['lra_lu']:.1f} LU")
