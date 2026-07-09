@@ -64,10 +64,6 @@ _LRA_REL_GATE_LU = 20.0     # relative gate for LRA (EBU Tech 3342)
 # margin while reducing the working-set by 3× at a typical 48 kHz source.
 _LOUDNESS_SR = 16000
 
-# How many seconds of centred audio are kept for the frequency-response plot.
-# 300 s gives ample frequency resolution at 800 Hz analysis rate.
-_FREQ_EXCERPT_DURATION_S = 300.0
-
 
 def _biquad_kweighting(sr):
     """Return the two BS.1770-4 K-weighting biquads for a sample rate.
@@ -753,22 +749,16 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     _tick(f"Downsample {sr} → {sr_ds} Hz")
 
     # -----------------------------------------------------------------------
-    # Frequency-response excerpt (used only for plotting).
-    # Extract a centred window from the downsampled data so the plot can be
-    # generated without retaining the full-resolution audio.
+    # Frequency-response for plotting.
+    # Use the downsampled data so the plot can be generated without retaining the full-resolution audio.
     # -----------------------------------------------------------------------
-    n_excerpt = min(len(data_ds), int(_FREQ_EXCERPT_DURATION_S * sr_ds))
-    mid = len(data_ds) // 2
-    ex_start = max(0, mid - n_excerpt // 2)
-    ex_end = ex_start + n_excerpt
-
     freq_audio: dict = {}
     left_col = 0
     center_col = 2 if n_ch > 2 else 0
-    freq_audio["left"] = data_ds[ex_start:ex_end, left_col].copy()
-    freq_audio["center"] = data_ds[ex_start:ex_end, center_col].copy()
+    freq_audio["left"] = data_ds[:, left_col].copy()
+    freq_audio["center"] = data_ds[:, center_col].copy()
     if lfe_idx is not None and lfe_idx < data_ds.shape[1]:
-        freq_audio["lfe"] = data_ds[ex_start:ex_end, lfe_idx].copy()
+        freq_audio["lfe"] = data_ds[:, lfe_idx].copy()
     freq_audio["sr"] = sr_ds
 
     # -----------------------------------------------------------------------
@@ -840,9 +830,13 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
 
     if lfe_idx is not None:
         lfe_data_ds = _lfe_lowpass(data_ds[:, lfe_idx], sr_ds)
+        _tick("LFE loudness / crest / activity 1")
         lfe_loudness = _lfe_loudness(lfe_data_ds, sr_ds)
+        _tick("LFE loudness / crest / activity 2")
         lfe_rms = _lfe_rms_dbfs(lfe_data_ds)
+        _tick("LFE loudness / crest / activity 3")
         lfe_crest = _lfe_crest_factor(lfe_data_ds)
+        _tick("LFE loudness / crest / activity 4")
         lfe_activity = _lfe_activity(lfe_data_ds)
     _tick("LFE loudness / crest / activity")
 

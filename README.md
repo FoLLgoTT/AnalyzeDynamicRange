@@ -416,7 +416,7 @@ The script loads the entire file into RAM at the original sample rate. The follo
 
 1. The entire audio is **downsampled to 16 kHz** immediately after reading. All metrics (K-weighted loudness, LRA, DR score, RMS, LFE loudness/crest/activity, surround RMS, DC offset) are computed from this compact representation. The downsampled copy is ~3× smaller for a 48 kHz source.
 2. The **original full-resolution array is immediately freed** after the downsampling step.
-3. The **frequency-response plot** uses only a 300-second centred excerpt at 16 kHz, so no large array is retained after analysis.
+3. The **frequency-response plot** uses 16 kHz, so no large array is retained after analysis.
 
 ### Approximate peak RAM requirement
 
