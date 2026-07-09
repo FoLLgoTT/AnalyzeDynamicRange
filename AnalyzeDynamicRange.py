@@ -452,46 +452,6 @@ def _lfe_lowpass(data_lfe, sr):
     return sosfiltfilt(sos, data_lfe)
 
 
-def _lfe_loudness(data_lfe, sr):
-    """Measure LFE channel loudness separately (LUFS).
-
-    LFE uses standard K-weighting but measured independently without
-    the surround channel weighting applied.
-
-    Parameters
-        data_lfe  LFE channel data (1D array).
-        sr        Sample rate in Hz.
-
-    Returns
-        LFE integrated loudness in LUFS, or NaN if insufficient data.
-    """
-    if data_lfe.ndim == 1:
-        data_lfe = data_lfe[:, np.newaxis]
-
-    weighted = _k_weight(data_lfe, sr)
-    z_400 = _block_mean_square(weighted, sr, win_s=0.4, step_s=0.1)
-
-    if z_400.shape[0] == 0:
-        return float("nan")
-
-    # LFE has weight 1.0 (no special weighting)
-    lfe_weight = np.array([1.0])
-    return _integrated_loudness(z_400, lfe_weight)
-
-
-def _lfe_rms_dbfs(data_lfe):
-    """RMS level of LFE channel in dBFS."""
-    rms = np.sqrt(np.mean(np.square(data_lfe)))
-    return 20.0 * np.log10(max(float(rms), _EPS))
-
-
-def _lfe_crest_factor(data_lfe):
-    """Crest factor of LFE: Peak / RMS ratio in dB."""
-    peak = np.max(np.abs(data_lfe))
-    rms = np.sqrt(np.mean(np.square(data_lfe)))
-    if rms < _EPS:
-        return float("nan")
-    return 20.0 * np.log10(max(float(peak / rms), _EPS))
 
 
 def _lfe_band_analysis(data_lfe, sr, integrated_main):
@@ -923,42 +883,13 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     # -----------------------------------------------------------------------
     # LFE channel analysis (at _LOUDNESS_SR)
     # -----------------------------------------------------------------------
-    lfe_loudness = float("nan")
-    lfe_rms = float("nan")
-    lfe_crest = float("nan")
     lfe_band_result = None
     lfe_data_ds = None  # kept alive until after _surround_rms_relative_to_center
 
     if lfe_idx is not None:
         lfe_data_ds = _lfe_lowpass(data_ds[:, lfe_idx], sr_ds)
-        lfe_loudness = _lfe_loudness(lfe_data_ds, sr_ds)
-        lfe_rms = _lfe_rms_dbfs(lfe_data_ds)
-        lfe_crest = _lfe_crest_factor(lfe_data_ds)
-    _tick("LFE loudness / crest")
-
-    if lfe_idx is not None and lfe_data_ds is not None:
         lfe_band_result = _lfe_band_analysis(lfe_data_ds, sr_ds, integrated)
     _tick("LFE band analysis")
-
-    if lfe_idx is not None:
-        print("\n=== LFE Channel Analysis ===")
-        print(f"  Low-pass filter     : {_LFE_LOWPASS_HZ:.0f} Hz "
-              f"(Butterworth order {_LFE_LOWPASS_ORDER}, zero-phase)")
-        print(f"  LFE loudness        : {lfe_loudness:8.1f} LUFS")
-        if not np.isnan(integrated) and not np.isnan(lfe_loudness):
-            lfe_ratio = lfe_loudness - integrated
-            print(f"  LFE-to-main ratio   : {lfe_ratio:8.1f} dB")
-        print(f"  LFE RMS level       : {lfe_rms:8.1f} dBFS")
-        print(f"  LFE crest factor    : {lfe_crest:8.1f} dB")
-
-        if not np.isnan(lfe_loudness) and not np.isnan(integrated):
-            ratio = lfe_loudness - integrated
-            if ratio > -6.0:
-                print(f"  [WARN] LFE too loud ({ratio:.1f} dB) - should be "
-                      f"-8 to -12 dB below main mix.")
-            elif ratio < -15.0:
-                print(f"  [INFO] LFE very quiet ({ratio:.1f} dB) - check if "
-                      f"intentional.")
 
     if lfe_band_result is not None:
         ba = lfe_band_result
@@ -1061,9 +992,6 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         "short_term": short_term,
         "momentary": momentary,
         "step_s": 0.1,
-        "lfe_loudness": lfe_loudness,
-        "lfe_rms_dbfs": lfe_rms,
-        "lfe_crest_factor": lfe_crest,
         "lfe_band_analysis": lfe_band_result,
         "center_rms_dbfs": center_dbfs,
         "surround_rms": surround_results,
