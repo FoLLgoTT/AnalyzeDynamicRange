@@ -138,7 +138,7 @@ python AnalyzeDynamicRange.py film.wav --plot
 python AnalyzeDynamicRange.py film.wav --plot loudness_analysis.png
 ```
 
-The plot displays two subplots:
+The plot displays three subplots:
 
 **Top: Loudness Over Time**
 - Blue curve: Short-term loudness (3-second windows)
@@ -146,7 +146,7 @@ The plot displays two subplots:
 - Orange shaded area: Loudness Range bounds (10th to 95th percentile)
 - Fixed Y-axis range: -60 to 0 LUFS
 
-**Bottom: Loudness Range Distribution (Histogram)**
+**Middle: Loudness Range Distribution (Histogram)**
 - Histogram of short-term loudness values showing dynamic range distribution
 - Red dashed line: Integrated loudness
 - Orange dotted line: 10th percentile (LRA lower bound)
@@ -158,6 +158,18 @@ The histogram helps identify:
 - Dynamic range (wide histogram = dynamic)
 - Gating effectiveness
 - Loudness distribution characteristics
+
+**Bottom: Frequency Response (Center vs LFE)**
+- Blue curve: Center channel (Ch 3) frequency response
+- Red curve: LFE channel (Ch 4) frequency response
+- X-axis: 1-200 Hz (optimized frequency range)
+- Y-axis: Magnitude in dBFS
+- Analysis performed at 1 kHz sampling rate for precision
+
+This frequency response plot helps identify:
+- Frequency balance between Center and LFE
+- Bass distribution (typically 1-120 Hz for LFE)
+- Center channel presence (typically 100-200 Hz overlap)
 
 **Note:** Requires `matplotlib`. Install with: `pip install matplotlib`
 
