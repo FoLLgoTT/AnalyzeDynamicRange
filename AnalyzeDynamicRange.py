@@ -409,6 +409,22 @@ def _frequency_response(audio_data, sr, fraction=24,
 _LFE_LOWPASS_HZ = 120.0
 _LFE_LOWPASS_ORDER = 4
 
+# Frequency bands for LFE band analysis.
+# Each entry: (display label, lower cutoff Hz or None, upper cutoff Hz,
+#              geometric-mean centre frequency Hz for centroid calculation).
+_LFE_BANDS = [
+    ("<20 Hz",    None,  20.0,  10.0),
+    ("20-40 Hz",  20.0,  40.0,  28.3),
+    ("40-80 Hz",  40.0,  80.0,  56.6),
+    ("80-120 Hz", 80.0, 120.0,  98.0),
+]
+
+# The LFE activity threshold is set this many dB below the main-mix
+# integrated loudness.  Frequency-band statistics are computed only over
+# windows that exceed this threshold so that long silent passages do not
+# distort the results.
+_LFE_ACTIVITY_OFFSET_DB = 30.0
+
 _SURROUND_HIGHPASS_HZ = 80.0
 _SURROUND_HIGHPASS_ORDER = 4
 
@@ -476,6 +492,136 @@ def _lfe_crest_factor(data_lfe):
     if rms < _EPS:
         return float("nan")
     return 20.0 * np.log10(max(float(peak / rms), _EPS))
+
+
+def _lfe_band_analysis(data_lfe, sr, integrated_main):
+    """Analyse the LFE channel by frequency band.
+
+    Divides the already-low-passed LFE signal into four bands
+    (< 20 Hz, 20–40 Hz, 40–80 Hz, 80–120 Hz) and computes activity,
+    P95 and peak short-term levels, and the peak-to-P95 spread for
+    each band.  All level metrics are relative to the main-mix
+    integrated loudness so that results are comparable across films
+    with different overall loudness.
+
+    A sliding 400 ms window with 100 ms hop is used throughout.
+    Only windows in which the full-band LFE short-term RMS exceeds
+    ``integrated_main − _LFE_ACTIVITY_OFFSET_DB`` (dBFS) are
+    included in the P95 / Peak / centroid statistics; this prevents
+    long silent passages from distorting the results.
+
+    Parameters
+        data_lfe        Filtered LFE channel (1D, already low-passed
+                        at _LFE_LOWPASS_HZ).
+        sr              Sample rate in Hz.
+        integrated_main Integrated loudness of the main mix in LUFS.
+
+    Returns
+        Dict with keys ``bands``, ``threshold_dBFS``,
+        ``sub_bass_ratio_db``, ``infra_ratio_db``,
+        ``spectral_centroid_hz``, or None if the signal is too short.
+    """
+    nyquist = sr / 2.0
+    win = int(round(0.4 * sr))
+    step = max(int(round(0.1 * sr)), 1)
+    n = len(data_lfe)
+
+    starts = np.arange(0, n - win + 1, step, dtype=np.intp)
+    if starts.size == 0:
+        return None
+
+    # Activity threshold: main integrated loudness − offset, in linear RMS.
+    threshold_dBFS = integrated_main - _LFE_ACTIVITY_OFFSET_DB
+    threshold_rms = 10.0 ** (threshold_dBFS / 20.0)
+
+    # Vectorised sliding-window mean-square via prefix sums (float64 to
+    # avoid subnormal-float slowdowns during IIR filter computation).
+    def _win_ms(sig):
+        sq = np.square(sig.astype(np.float64, copy=False))
+        S = np.empty(n + 1, dtype=np.float64)
+        S[0] = 0.0
+        np.cumsum(sq, out=S[1:])
+        return (S[starts + win] - S[starts]) / win
+
+    # Global activity mask: windows where full-band LFE exceeds threshold.
+    global_rms = np.sqrt(_win_ms(data_lfe))
+    global_mask = global_rms >= threshold_rms
+    n_global_active = int(global_mask.sum())
+
+    band_results = []
+    avg_ms_per_band = []   # mean-square over globally-active windows, per band
+
+    for label, f_low, f_high, _fc in _LFE_BANDS:
+        # Design a 2nd-order Butterworth band filter.
+        if f_low is None:
+            wn = min(f_high, nyquist * 0.995) / nyquist
+            sos = butter(2, wn, btype='low', output='sos')
+        else:
+            wn = [f_low / nyquist,
+                  min(f_high, nyquist * 0.995) / nyquist]
+            sos = butter(2, wn, btype='bandpass', output='sos')
+
+        # Zero-phase filtering – cast to float64 to prevent subnormal
+        # float32 arithmetic in scipy's IIR state variables.
+        band_data = sosfiltfilt(sos, data_lfe.astype(np.float64, copy=False))
+        band_ms = _win_ms(band_data)
+        del band_data
+
+        band_rms_win = np.sqrt(band_ms)
+
+        # Per-band activity: fraction of ALL windows exceeding threshold.
+        act_pct = 100.0 * float(np.sum(band_rms_win >= threshold_rms)) / len(band_rms_win)
+
+        # Level statistics over globally-active windows only.
+        if n_global_active > 0:
+            active_ms = band_ms[global_mask]
+            active_db = 20.0 * np.log10(np.maximum(np.sqrt(active_ms), _EPS))
+            p95 = float(np.percentile(active_db, 95))
+            peak = float(np.max(active_db))
+            avg_ms = float(np.mean(active_ms))
+        else:
+            p95 = peak = avg_ms = float("nan")
+
+        nan = float("nan")
+        band_results.append({
+            "label":       label,
+            "activity_pct": act_pct,
+            "p95_dBFS":    p95,
+            "p95_rel":     (p95 - integrated_main) if not np.isnan(p95) else nan,
+            "peak_dBFS":   peak,
+            "peak_rel":    (peak - integrated_main) if not np.isnan(peak) else nan,
+            "spread_db":   (peak - p95) if not np.isnan(peak) else nan,
+        })
+        avg_ms_per_band.append(avg_ms if not np.isnan(avg_ms) else 0.0)
+
+    # ---- Cross-band ratios (energy over globally-active windows) ----
+
+    e_infra, e_sub, e_bass, e_upper = avg_ms_per_band
+
+    e_20_120 = e_sub + e_bass + e_upper
+    sub_bass_ratio = (10.0 * np.log10(e_sub / (e_bass + e_upper))
+                      if (e_bass + e_upper) > _EPS and e_sub > _EPS
+                      else float("nan"))
+    infra_ratio = (10.0 * np.log10(e_infra / e_20_120)
+                   if e_20_120 > _EPS and e_infra > _EPS
+                   else float("nan"))
+
+    # Spectral centroid: energy-weighted mean of geometric-band centres
+    # over the audible LFE range (20–120 Hz only).
+    centers = [b[3] for b in _LFE_BANDS[1:]]   # 28.3, 56.6, 98.0
+    energies = [e_sub, e_bass, e_upper]
+    total_e = sum(energies)
+    centroid = (sum(c * e for c, e in zip(centers, energies)) / total_e
+                if total_e > _EPS else float("nan"))
+
+    return {
+        "bands":               band_results,
+        "threshold_dBFS":      threshold_dBFS,
+        "sub_bass_ratio_db":   sub_bass_ratio,
+        "infra_ratio_db":      infra_ratio,
+        "spectral_centroid_hz": centroid,
+    }
+
 
 def _surround_highpass(data_ch, sr):
     """Apply a zero-phase Butterworth high-pass filter at _SURROUND_HIGHPASS_HZ.
@@ -769,6 +915,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     lfe_loudness = float("nan")
     lfe_rms = float("nan")
     lfe_crest = float("nan")
+    lfe_band_result = None
     lfe_data_ds = None  # kept alive until after _surround_rms_relative_to_center
 
     if lfe_idx is not None:
@@ -777,6 +924,10 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         lfe_rms = _lfe_rms_dbfs(lfe_data_ds)
         lfe_crest = _lfe_crest_factor(lfe_data_ds)
     _tick("LFE loudness / crest")
+
+    if lfe_idx is not None and lfe_data_ds is not None:
+        lfe_band_result = _lfe_band_analysis(lfe_data_ds, sr_ds, integrated)
+    _tick("LFE band analysis")
 
     if lfe_idx is not None:
         print("\n=== LFE Channel Analysis ===")
@@ -797,6 +948,51 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
             elif ratio < -15.0:
                 print(f"  [INFO] LFE very quiet ({ratio:.1f} dB) - check if "
                       f"intentional.")
+
+    if lfe_band_result is not None:
+        ba = lfe_band_result
+        ref_str = (f"{integrated:.1f} LUFS" if not np.isnan(integrated)
+                   else "n/a")
+        print(f"\n=== LFE Band Analysis (rel. to {ref_str} main mix) ===")
+        print(f"  Activity threshold  : {ba['threshold_dBFS']:.1f} dBFS "
+              f"(integrated − {_LFE_ACTIVITY_OFFSET_DB:.0f} dB)")
+        print()
+        hdr = f"  {'Band':<12}  {'Activity':>8}  {'P95':>9}  {'Peak':>9}  {'Peak−P95':>9}"
+        print(hdr)
+        print(f"  {'-'*12}  {'-'*8}  {'-'*9}  {'-'*9}  {'-'*9}")
+        for b in ba["bands"]:
+            act = f"{b['activity_pct']:.1f} %"
+            p95 = (f"{b['p95_rel']:+.1f} dB"
+                   if not np.isnan(b["p95_rel"]) else "  n/a")
+            peak = (f"{b['peak_rel']:+.1f} dB"
+                    if not np.isnan(b["peak_rel"]) else "  n/a")
+            spread = (f"{b['spread_db']:.1f} dB"
+                      if not np.isnan(b["spread_db"]) else "  n/a")
+            warn = ""
+            if (b["label"] == "<20 Hz"
+                    and b["activity_pct"] > 5.0
+                    and not np.isnan(ba["infra_ratio_db"])
+                    and ba["infra_ratio_db"] > -20.0):
+                warn = "  [WARN]"
+            print(f"  {b['label']:<12}  {act:>8}  {p95:>9}  {peak:>9}"
+                  f"  {spread:>9}{warn}")
+        print()
+        if not np.isnan(ba["sub_bass_ratio_db"]):
+            r = ba["sub_bass_ratio_db"]
+            depth = ("very deep" if r > -3 else
+                     "deep" if r > -6 else
+                     "moderate depth" if r > -12 else "shallow")
+            print(f"  Sub-bass ratio  (20–40 / 40–120 Hz): {r:+.1f} dB"
+                  f"  [{depth}]")
+        if not np.isnan(ba["infra_ratio_db"]):
+            r = ba["infra_ratio_db"]
+            note = ("[WARN] significant infrasound" if r > -20 else
+                    "[INFO] notable infrasound" if r > -30 else "[OK]")
+            print(f"  Infrasound ratio (<20 / 20–120 Hz) : {r:+.1f} dB"
+                  f"  {note}")
+        if not np.isnan(ba["spectral_centroid_hz"]):
+            print(f"  Spectral centroid (active windows) : "
+                  f"{ba['spectral_centroid_hz']:.0f} Hz")
 
     # Surround channel RMS relative to center (at _LOUDNESS_SR).
     # Pass the already filtered LFE signal to avoid a redundant low-pass pass.
@@ -853,6 +1049,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         "lfe_loudness": lfe_loudness,
         "lfe_rms_dbfs": lfe_rms,
         "lfe_crest_factor": lfe_crest,
+        "lfe_band_analysis": lfe_band_result,
         "center_rms_dbfs": center_dbfs,
         "surround_rms": surround_results,
         "dc_offsets": dc_offsets,
