@@ -184,7 +184,7 @@ python AnalyzeDynamicRange.py *.wav --skip-existing
 ---
 
 ## Plot
-[image] (example.png)
+![image] (example.png)
 
 The plot is saved as a PNG (120 dpi) and contains **six panels**:
 
