@@ -38,6 +38,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import glob
 import math
 import os
 import sys
@@ -947,8 +948,9 @@ def main():
     ap = argparse.ArgumentParser(
         description="Analyse the dynamic range and loudness of a film audio "
                     "file (ITU-R BS.1770-4 / EBU R128).")
-    ap.add_argument("audio",
-                    help="Path to the audio file to analyse")
+    ap.add_argument("audio", nargs="+",
+                    help="Path(s) to audio files; glob patterns are supported "
+                         "(e.g. *.wav, /path/to/reels/*.wav)")
     ap.add_argument("--layout", choices=["mono", "stereo", "5.1", "6.1", "7.1"],
                     default=None,
                     help="Channel layout override (default: auto-detect)")
@@ -959,23 +961,52 @@ def main():
     ap.add_argument("--exclude-surround", action="store_true",
                     help="Exclude the surround channels from the analysis "
                          "(front/dialogue-only loudness)")
-    ap.add_argument("--plot", nargs="?", const="AUTO", default=None, metavar="FILE",
-                    help="Render the short-term loudness curve to an image "
-                         "(omit FILE to use input filename with .png extension)")
+    ap.add_argument("--plot", nargs="?", const="AUTO", default="AUTO",
+                    metavar="FILE",
+                    help="Path for the output PNG (default: input filename "
+                         "with .png extension); pass an empty string or "
+                         "--no-plot to suppress the plot")
+    ap.add_argument("--no-plot", action="store_true",
+                    help="Suppress the plot even when no --plot FILE is given")
     args = ap.parse_args()
 
-    result = analyze(args.audio, layout=args.layout,
-                     lfe_channel=args.lfe_channel,
-                     per_channel=args.per_channel,
-                     exclude_surround=args.exclude_surround)
+    # Expand glob patterns; preserve order and deduplicate.
+    paths = []
+    seen = set()
+    for pattern in args.audio:
+        matches = sorted(glob.glob(pattern))
+        if not matches:
+            print(f"[WARN] No files match: {pattern}", file=sys.stderr)
+        for p in matches:
+            if p not in seen:
+                seen.add(p)
+                paths.append(p)
 
-    if args.plot is not None:
-        # If --plot is used without a filename, generate from input filename
-        if args.plot == "AUTO":
-            plot_path = os.path.splitext(args.audio)[0] + ".png"
-        else:
-            plot_path = args.plot
-        _plot(result, plot_path)
+    if not paths:
+        sys.exit("[ERR] No input files found.")
+
+    fixed_plot_path = (None if args.plot == "AUTO" else args.plot)
+    if fixed_plot_path and len(paths) > 1:
+        print("[WARN] A fixed --plot path cannot be used with multiple input "
+              "files; each file will produce its own .png.", file=sys.stderr)
+        fixed_plot_path = None
+
+    for i, path in enumerate(paths):
+        if len(paths) > 1:
+            print(f"\n{'=' * 64}")
+            print(f"  File {i + 1}/{len(paths)}: {path}")
+            print(f"{'=' * 64}\n")
+
+        result = analyze(path, layout=args.layout,
+                         lfe_channel=args.lfe_channel,
+                         per_channel=args.per_channel,
+                         exclude_surround=args.exclude_surround)
+
+        if args.plot is not None and not args.no_plot:
+            plot_path = (fixed_plot_path
+                         if fixed_plot_path
+                         else os.path.splitext(path)[0] + ".png")
+            _plot(result, plot_path)
 
 
 if __name__ == "__main__":
