@@ -17,8 +17,10 @@ Channel handling
     By default a standard channel order is assumed for the loudness sum:
         mono   : [C]
         stereo : [L, R]
-        >= 5 ch: [L, R, C, LFE, Ls, Rs, ...] - the LFE is excluded and
-                 the surround channels are weighted +1.5 dB per BS.1770.
+        5.1    : [L, R, C, LFE, Ls, Rs]
+        6.1    : [L, R, C, LFE, Ls, Rs, Rc]
+        7.1    : [L, R, C, LFE, Ls, Rs, Lrs, Rrs]
+    The LFE is excluded and surround channels are weighted +1.5 dB per BS.1770.
     Use --layout / --lfe-channel to override.
 
 Requirements
@@ -120,7 +122,7 @@ def _channel_weights(n_ch, layout=None, lfe_channel=None,
     Parameters
         n_ch              Number of channels in the file.
         layout            Optional explicit layout: one of "mono", "stereo",
-                          "5.1", "7.1" or None for auto-detection.
+                          "5.1", "6.1", "7.1" or None for auto-detection.
         lfe_channel       Optional 0-based index of the LFE channel to
                           exclude.
         exclude_surround  When True, the surround channels are excluded from
@@ -137,18 +139,26 @@ def _channel_weights(n_ch, layout=None, lfe_channel=None,
 
     if layout is None:
         if n_ch >= 6:
-            layout = "5.1" if n_ch == 6 else "7.1" if n_ch == 8 else "auto"
+            layout = "5.1" if n_ch == 6 else "6.1" if n_ch == 7 else "7.1" if n_ch == 8 else "auto"
         else:
             layout = "auto"
 
-    # Standard SMPTE/ITU order: L R C LFE Ls Rs [Lrs Rrs].
+    # Standard SMPTE/ITU order: L R C LFE Ls Rs [Rc] [Lrs Rrs].
     if layout == "5.1" and n_ch >= 6:
         weights[3] = 0.0                 # LFE excluded
         weights[4] = surround            # Ls
         weights[5] = surround            # Rs
+    elif layout == "6.1" and n_ch >= 7:
+        weights[3] = 0.0                 # LFE excluded
+        weights[4] = surround            # Ls
+        weights[5] = surround            # Rs
+        weights[6] = surround            # Rc (Rear Center)
     elif layout == "7.1" and n_ch >= 8:
         weights[3] = 0.0                 # LFE excluded
-        weights[4:8] = surround          # Ls Rs Lrs Rrs
+        weights[4] = surround            # Ls
+        weights[5] = surround            # Rs
+        weights[6] = surround            # Lrs
+        weights[7] = surround            # Rrs
     elif layout == "auto":
         # Weight any channel beyond the front L/R/C as surround.
         if n_ch > 3:
@@ -293,6 +303,72 @@ def _rms_dbfs(data):
     return 20.0 * np.log10(max(float(rms), _EPS))
 
 
+def _lfe_loudness(data_lfe, sr):
+    """Measure LFE channel loudness separately (LUFS).
+
+    LFE uses standard K-weighting but measured independently without
+    the surround channel weighting applied.
+
+    Parameters
+        data_lfe  LFE channel data (1D array).
+        sr        Sample rate in Hz.
+
+    Returns
+        LFE integrated loudness in LUFS, or NaN if insufficient data.
+    """
+    if data_lfe.ndim == 1:
+        data_lfe = data_lfe[:, np.newaxis]
+
+    weighted = _k_weight(data_lfe, sr)
+    z_400 = _block_mean_square(weighted, sr, win_s=0.4, step_s=0.1)
+
+    if z_400.shape[0] == 0:
+        return float("nan")
+
+    # LFE has weight 1.0 (no special weighting)
+    lfe_weight = np.array([1.0])
+    return _integrated_loudness(z_400, lfe_weight)
+
+
+def _lfe_rms_dbfs(data_lfe):
+    """RMS level of LFE channel in dBFS."""
+    rms = np.sqrt(np.mean(np.square(data_lfe)))
+    return 20.0 * np.log10(max(float(rms), _EPS))
+
+
+def _lfe_true_peak_dbtp(data_lfe, sr):
+    """True peak level of LFE channel via 4x oversampling."""
+    factor = 4 if sr <= 96000 else 2
+    oversampled = resample_poly(data_lfe, factor, 1, axis=0)
+    peak = np.max(np.abs(oversampled))
+    return 20.0 * np.log10(max(float(peak), _EPS))
+
+
+def _lfe_crest_factor(data_lfe):
+    """Crest factor of LFE: Peak / RMS ratio in dB."""
+    peak = np.max(np.abs(data_lfe))
+    rms = np.sqrt(np.mean(np.square(data_lfe)))
+    if rms < _EPS:
+        return float("nan")
+    return 20.0 * np.log10(max(float(peak / rms), _EPS))
+
+
+def _lfe_activity(data_lfe, threshold_dbfs=-50):
+    """Percentage of time LFE is above threshold.
+
+    Parameters
+        data_lfe        LFE channel data.
+        threshold_dbfs  Activity threshold in dBFS.
+
+    Returns
+        Percentage of active samples (0-100).
+    """
+    threshold_linear = 10.0 ** (threshold_dbfs / 20.0)
+    active_samples = np.sum(np.abs(data_lfe) > threshold_linear)
+    activity_percent = 100.0 * active_samples / len(data_lfe)
+    return activity_percent
+
+
 def analyze(path, layout=None, lfe_channel=None, per_channel=False,
             exclude_surround=False):
     """Analyse the dynamic range / loudness of an audio file.
@@ -390,6 +466,48 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
             print(f"  Channel {ch + 1:2d}: {ch_int:8.2f} LUFS  "
                   f"true peak {tp_per_ch[ch]:7.2f} dBTP{tag}")
 
+    # LFE analysis if LFE channel is identified
+    lfe_loudness = float("nan")
+    lfe_peak = float("nan")
+    lfe_rms = float("nan")
+    lfe_crest = float("nan")
+    lfe_activity = float("nan")
+
+    lfe_idx = None
+    if lfe_ch:
+        lfe_idx = lfe_ch[0] - 1  # Convert from 1-based to 0-based index
+    elif lfe_channel is not None and 0 <= lfe_channel < n_ch:
+        lfe_idx = lfe_channel
+
+    if lfe_idx is not None:
+        lfe_data = data[:, lfe_idx]
+        lfe_loudness = _lfe_loudness(lfe_data, sr)
+        lfe_peak = _lfe_true_peak_dbtp(lfe_data, sr)
+        lfe_rms = _lfe_rms_dbfs(lfe_data)
+        lfe_crest = _lfe_crest_factor(lfe_data)
+        lfe_activity = _lfe_activity(lfe_data)
+
+        print("\n=== LFE Channel Analysis ===")
+        print(f"  LFE loudness        : {lfe_loudness:8.2f} LUFS")
+        if not np.isnan(integrated) and not np.isnan(lfe_loudness):
+            lfe_ratio = lfe_loudness - integrated
+            print(f"  LFE-to-main ratio   : {lfe_ratio:8.2f} dB")
+        print(f"  LFE peak            : {lfe_peak:8.2f} dBTP")
+        print(f"  LFE RMS level       : {lfe_rms:8.2f} dBFS")
+        print(f"  LFE crest factor    : {lfe_crest:8.2f} dB")
+        print(f"  LFE activity        : {lfe_activity:8.2f} %")
+
+        if lfe_peak > -1.0:
+            print(f"  [WARN] LFE peak exceeds -1 dBTP - risk of clipping.")
+        if not np.isnan(lfe_loudness) and not np.isnan(integrated):
+            ratio = lfe_loudness - integrated
+            if ratio > -6.0:
+                print(f"  [WARN] LFE too loud ({ratio:.1f} dB) - should be "
+                      f"-8 to -12 dB below main mix.")
+            elif ratio < -15.0:
+                print(f"  [INFO] LFE very quiet ({ratio:.1f} dB) - check if "
+                      f"intentional.")
+
     return {
         "sr": sr,
         "n_channels": n_ch,
@@ -401,6 +519,11 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         "short_term": short_term,
         "momentary": momentary,
         "step_s": 0.1,
+        "lfe_loudness": lfe_loudness,
+        "lfe_peak_dbtp": lfe_peak,
+        "lfe_rms_dbfs": lfe_rms,
+        "lfe_crest_factor": lfe_crest,
+        "lfe_activity_percent": lfe_activity,
     }
 
 
@@ -427,7 +550,7 @@ def _plot(result, out_path):
                label=f"Integrated {result['integrated_lufs']:.1f} LUFS")
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Loudness (LUFS)")
-    ax.set_ylim(-60, 0)
+    ax.set_ylim(-50, 0)
     ax.set_title(f"Film loudness over time  -  LRA "
                  f"{result['lra_lu']:.1f} LU, true peak "
                  f"{result['true_peak_dbtp']:.1f} dBTP")
@@ -444,7 +567,7 @@ def main():
                     "file (ITU-R BS.1770-4 / EBU R128).")
     ap.add_argument("audio",
                     help="Path to the audio file to analyse")
-    ap.add_argument("--layout", choices=["mono", "stereo", "5.1", "7.1"],
+    ap.add_argument("--layout", choices=["mono", "stereo", "5.1", "6.1", "7.1"],
                     default=None,
                     help="Channel layout override (default: auto-detect)")
     ap.add_argument("--lfe-channel", type=int, default=None, metavar="N",

@@ -23,6 +23,11 @@ The script calculates the following metrics:
 | **RMS Level** | dBFS | Overall RMS amplitude across all channels |
 | **Momentary Loudness** | LUFS | Time series over 400 ms windows |
 | **Short-term Loudness** | LUFS | Time series over 3-second windows |
+| **LFE Loudness** | LUFS | Low-frequency effects (subwoofer) channel loudness |
+| **LFE-to-Main Ratio** | dB | Level difference between LFE and main mix |
+| **LFE Peak** | dBTP | True peak of LFE channel |
+| **LFE Crest Factor** | dB | Peak-to-RMS ratio of LFE |
+| **LFE Activity** | % | Percentage of time LFE channel is active |
 
 ### Special Features
 
@@ -100,6 +105,7 @@ Overrides automatic channel layout detection:
 
 ```bash
 python AnalyzeDynamicRange.py film.wav --layout 5.1
+python AnalyzeDynamicRange.py film.wav --layout 6.1
 python AnalyzeDynamicRange.py film.wav --layout 7.1
 python AnalyzeDynamicRange.py film.wav --layout stereo
 python AnalyzeDynamicRange.py film.wav --layout mono
@@ -149,6 +155,7 @@ The script supports multiple channel layouts. The default order follows SMPTE/IT
 - **Mono** (1 channel): `[C]`
 - **Stereo** (2 channels): `[L, R]`
 - **5.1** (6 channels): `[L, R, C, LFE, Ls, Rs]`
+- **6.1** (7 channels): `[L, R, C, LFE, Ls, Rs, Rc]`
 - **7.1** (8 channels): `[L, R, C, LFE, Ls, Rs, Lrs, Rrs]`
 - **Other**: Channels after position 3 are treated as surround
 
@@ -193,6 +200,68 @@ Crest factor of the loudest 20% of audio blocks.
 - DR 11-15: Dynamic content
 - DR > 15: Very dynamic (classical, orchestral)
 
+## LFE (Subwoofer) Channel Analysis
+
+The script automatically analyzes the LFE (Low-Frequency Effects) channel separately when detected:
+
+### LFE Loudness (LUFS)
+Integrated loudness of the subwoofer channel measured independently.
+
+**Typical Cinema Values:**
+- **Film**: -31 to -20 LUFS (much quieter than main mix)
+- **Ideal LFE-to-Main Ratio**: -8 to -12 dB below main loudness
+
+### LFE Peak (dBTP)
+Maximum peak level of the LFE channel with 4x oversampling.
+
+**Safety Margins:**
+- **-1 dBTP**: Standard headroom
+- **> 0 dBTP**: Risk of clipping
+
+### LFE Crest Factor (dB)
+Ratio of LFE peak to RMS level.
+
+**Interpretation:**
+- 8-12 dB: Normal bass content
+- < 8 dB: Heavily compressed bass
+- > 15 dB: Very dynamic (explosions, impacts)
+
+### LFE Activity (%)
+Percentage of time the LFE channel is above -50 dBFS.
+
+**Interpretation:**
+- 0-20%: Minimal LFE (dialogue-heavy content)
+- 20-50%: Moderate LFE (general cinema mix)
+- 50-80%: Heavy LFE (action, effects-heavy)
+- > 80%: Constant bass (rarely seen)
+
+### Example Output with LFE Analysis
+
+```
+File         : film_5.1.wav
+Sample rate  : 48000 Hz
+Channels     : 6
+Duration     : 120.5 s
+
+Surround ch  : [5, 6] (weighted +1.5 dB)
+Excluded ch  : [4] (LFE, not part of loudness sum)
+
+=== Dynamic Range / Loudness ===
+  Integrated loudness :   -23.45 LUFS
+  Loudness range (LRA):    11.20 LU
+  True peak           :    -3.50 dBTP
+  DR score            :       12
+  RMS level           :   -30.15 dBFS
+
+=== LFE Channel Analysis ===
+  LFE loudness        :   -31.20 LUFS
+  LFE-to-main ratio   :    -7.75 dB
+  LFE peak            :    -1.50 dBTP
+  LFE RMS level       :   -32.80 dBFS
+  LFE crest factor    :    12.35 dB
+  LFE activity        :    65.50 %
+```
+
 ## Programming Interface
 
 ### `analyze()` Function
@@ -218,6 +287,11 @@ result = analyze(
 - `short_term`: Time series (3-second windows)
 - `momentary`: Time series (400 ms windows)
 - `step_s`: Window step size
+- `lfe_loudness`: LFE channel loudness (LUFS)
+- `lfe_peak_dbtp`: LFE channel true peak (dBTP)
+- `lfe_rms_dbfs`: LFE channel RMS level (dBFS)
+- `lfe_crest_factor`: LFE peak-to-RMS ratio (dB)
+- `lfe_activity_percent`: Percentage of time LFE is active (%)
 
 ### Example (Programmatic Usage)
 
