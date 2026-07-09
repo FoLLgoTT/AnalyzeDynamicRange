@@ -503,15 +503,21 @@ def _surround_highpass(data_ch, sr):
 
 
 def _surround_rms_relative_to_center(data, sr, effective_layout):
-    """Measure surround channel RMS levels relative to the center channel.
+    """Measure all channel RMS levels relative to the center channel.
 
-    The surround channels are high-pass filtered at _SURROUND_HIGHPASS_HZ
-    before measurement to exclude bass content that is not representative of
-    surround level.  The center channel is measured unfiltered.
+    Filter applied per channel type:
+        L / R              : unfiltered
+        LFE                : low-pass at _LFE_LOWPASS_HZ
+        Ls / Rs / Rc / Lrs / Rrs : high-pass at _SURROUND_HIGHPASS_HZ
+
+    The center channel (index 2) is the unfiltered reference.
 
     Channel mapping per layout (0-based):
-        5.1 / 6.1 : Ls = 4, Rs = 5
-        7.1        : Lrs = 6, Rrs = 7
+        all    : L = 0, R = 1, C = 2 (reference)
+        >= 5.1 : LFE = 3
+        5.1    : Ls = 4, Rs = 5
+        6.1    : Ls = 4, Rs = 5, Rc = 6
+        7.1    : Ls = 4, Rs = 5, Lrs = 6, Rrs = 7
 
     Parameters
         data              Full audio array of shape (n_samples, n_channels).
@@ -520,46 +526,59 @@ def _surround_rms_relative_to_center(data, sr, effective_layout):
                           "auto".
 
     Returns
-        Tuple (center_dbfs, surround_results) where surround_results is a
-        list of (label, rms_dbfs, rel_db) for each surround channel, or
-        (nan, []) if not applicable.
+        Tuple (center_dbfs, results) where results is a list of
+        (label, rms_dbfs, rel_db) ordered by channel index, or
+        (nan, []) if the center channel is not present.
     """
     n_ch = data.shape[1]
     center_idx = 2
 
-    if n_ch < 6 or center_idx >= n_ch:
+    if center_idx >= n_ch:
         return float("nan"), []
+
+    # channel_map entries: (0-based index, display label, filter)
+    # filter is one of: 'none' | 'lowpass' | 'highpass'
+    channel_map = [
+        (0, "L    (Ch 1)", "none"),
+        (1, "R    (Ch 2)", "none"),
+    ]
+
+    if n_ch >= 4:
+        channel_map.append((3, "LFE  (Ch 4)", "lowpass"))
 
     if effective_layout == "7.1":
-        surround_map = [
-            (4, "Ls   (Ch 5)"),
-            (5, "Rs   (Ch 6)"),
-            (6, "Lrs  (Ch 7)"),
-            (7, "Rrs  (Ch 8)"),
+        channel_map += [
+            (4, "Ls   (Ch 5)", "highpass"),
+            (5, "Rs   (Ch 6)", "highpass"),
+            (6, "Lrs  (Ch 7)", "highpass"),
+            (7, "Rrs  (Ch 8)", "highpass"),
         ]
     elif effective_layout == "6.1":
-        surround_map = [
-            (4, "Ls   (Ch 5)"),
-            (5, "Rs   (Ch 6)"),
-            (6, "Rc   (Ch 7)"),
+        channel_map += [
+            (4, "Ls   (Ch 5)", "highpass"),
+            (5, "Rs   (Ch 6)", "highpass"),
+            (6, "Rc   (Ch 7)", "highpass"),
         ]
-    else:
-        surround_map = [
-            (4, "Ls   (Ch 5)"),
-            (5, "Rs   (Ch 6)"),
+    elif n_ch >= 6:
+        channel_map += [
+            (4, "Ls   (Ch 5)", "highpass"),
+            (5, "Rs   (Ch 6)", "highpass"),
         ]
 
-    surround_map = [(i, lbl) for i, lbl in surround_map if i < n_ch]
-    if not surround_map:
-        return float("nan"), []
+    channel_map = [(i, lbl, flt) for i, lbl, flt in channel_map if i < n_ch]
 
     center_rms = np.sqrt(np.mean(np.square(data[:, center_idx])))
     center_dbfs = 20.0 * np.log10(max(float(center_rms), _EPS))
 
     results = []
-    for ch_idx, label in surround_map:
-        filtered = _surround_highpass(data[:, ch_idx], sr)
-        rms = np.sqrt(np.mean(np.square(filtered)))
+    for ch_idx, label, flt in channel_map:
+        if flt == "lowpass":
+            ch_data = _lfe_lowpass(data[:, ch_idx], sr)
+        elif flt == "highpass":
+            ch_data = _surround_highpass(data[:, ch_idx], sr)
+        else:
+            ch_data = data[:, ch_idx]
+        rms = np.sqrt(np.mean(np.square(ch_data)))
         rms_dbfs = 20.0 * np.log10(max(float(rms), _EPS))
         results.append((label, rms_dbfs, rms_dbfs - center_dbfs))
 
@@ -724,12 +743,14 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         data, sr, effective_layout)
 
     if surround_results:
-        print("\n=== Surround Channel Analysis ===")
-        print(f"  High-pass filter    : {_SURROUND_HIGHPASS_HZ:.0f} Hz "
+        print("\n=== Channel RMS relative to Center ===")
+        print(f"  Low-pass  (LFE)     : {_LFE_LOWPASS_HZ:.0f} Hz "
+              f"(Butterworth order {_LFE_LOWPASS_ORDER}, zero-phase)")
+        print(f"  High-pass (surround): {_SURROUND_HIGHPASS_HZ:.0f} Hz "
               f"(Butterworth order {_SURROUND_HIGHPASS_ORDER}, zero-phase)")
-        print(f"  Center (Ch 3)       : {center_dbfs:8.2f} dBFS  (reference, unfiltered)")
+        print(f"  C    (Ch 3)         : {center_dbfs:8.2f} dBFS  (reference, unfiltered)")
         for label, rms_dbfs, rel_db in surround_results:
-            print(f"  {label}     : {rms_dbfs:8.2f} dBFS  {rel_db:+.2f} dB rel. Center")
+            print(f"  {label}     : {rms_dbfs:8.2f} dBFS  {rel_db:+.2f} dB rel. C")
 
     return {
         "sr": sr,
