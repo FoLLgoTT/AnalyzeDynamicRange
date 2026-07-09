@@ -1081,9 +1081,11 @@ def _plot(result, out_path):
         x_hi = center_5 + 25
 
         bins = np.arange(x_lo, x_hi + 1, 1)
-        ax2.hist(lv_abs, bins=bins, color="#1f77b4", alpha=0.4,
+        w_abs   = np.full(len(lv_abs),   100.0 / len(lv_abs))
+        w_gated = np.full(len(lv_gated), 100.0 / len(lv_abs))
+        ax2.hist(lv_abs, bins=bins, weights=w_abs, color="#1f77b4", alpha=0.4,
                  edgecolor="none", label="Absolute-gated")
-        ax2.hist(lv_gated, bins=bins, color="#1f77b4", alpha=0.8,
+        ax2.hist(lv_gated, bins=bins, weights=w_gated, color="#1f77b4", alpha=0.8,
                  edgecolor="black", linewidth=0.4, label="Double-gated (LRA)")
 
         ax2.axvline(result["integrated_lufs"], color="#d62728", ls=":", lw=2.0,
@@ -1100,7 +1102,7 @@ def _plot(result, out_path):
                     alpha=0.7, label=f"Rel. gate {rel_gate:.1f} LUFS")
 
         ax2.set_xlabel("Loudness (LUFS)")
-        ax2.set_ylabel("Count")
+        ax2.set_ylabel("Proportion (%)")
         ax2.set_title(f"Loudness Range Distribution  –  LRA {result['lra_lu']:.1f} LU")
         ax2.grid(True, alpha=0.3, axis="y")
         ax2.legend(loc="upper right", fontsize=9)
