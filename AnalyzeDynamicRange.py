@@ -430,7 +430,7 @@ def _lra_label(lra):
     if lra > 35:
         return "extreme dynamic"
     if lra > 30:
-        return "highly dynamic"
+        return "high dynamic"
     if lra > 25:
         return "dynamic"
     if lra > 20:
