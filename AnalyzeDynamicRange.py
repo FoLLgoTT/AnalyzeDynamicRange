@@ -442,7 +442,7 @@ def _lra_label(lra):
 
 def _lfe_activity_label(pct):
     if pct > 20:
-        return "insane"
+        return "extreme"
     if pct > 15:
         return "very high"
     if pct > 10:
@@ -861,7 +861,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     print("=== Dynamic Range / Loudness ===")
     print(f"  Integrated loudness : {integrated:8.1f} LUFS")
     print(f"  Loudness range (LRA): {lra:8.1f} LU"
-          f"  (\"{_lra_label(lra)}\")" if not np.isnan(lra) else
+          f"  ({_lra_label(lra)})" if not np.isnan(lra) else
           f"  Loudness range (LRA): {'n/a':>8}")
     print(f"  RMS level           : {rms:8.1f} dBFS")
     if momentary.size:
@@ -947,8 +947,8 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         bass_lbl = (_sub_bass_ratio_label(ba["sub_bass_ratio_db"])
                     if not np.isnan(ba["sub_bass_ratio_db"]) else "n/a")
         print(f"\n  Summary:")
-        print(f"    LFE activity       : \"{_lfe_activity_label(ba['global_activity_pct'])}\"")
-        print(f"    Bass characteristics: \"{bass_lbl}\"")
+        print(f"    LFE activity       : {_lfe_activity_label(ba['global_activity_pct'])}")
+        print(f"    Bass characteristics: {bass_lbl}")
 
     # Surround channel RMS relative to center (at _LOUDNESS_SR).
     # Pass the already filtered LFE signal to avoid a redundant low-pass pass.
@@ -1189,9 +1189,9 @@ def _plot(result, out_path):
                 else "n/a")
     sum_lines = [
         "Summary",
-        f'  Loudness range : "{lra_lbl}"',
-        f'  LFE activity   : "{act_lbl}"',
-        f'  Bass character : "{bass_lbl}"',
+        f'  Loudness range : {lra_lbl}',
+        f'  LFE activity   : {act_lbl}',
+        f'  Bass character : {bass_lbl}',
     ]
     ax4_sum.axis('off')
     ax4_sum.text(0.03, 0.97, "\n".join(sum_lines),
