@@ -976,7 +976,19 @@ def _plot(result, out_path):
         rel_gate = np.mean(lv_abs) - _LRA_REL_GATE_LU
         lv_gated = lv_abs[lv_abs >= rel_gate]
 
-        bins = np.arange(-50, 1, 1)
+        # p10 / p95 of the double-gated set — identical to _loudness_range()
+        p10 = np.percentile(lv_gated, 10)
+        p95 = np.percentile(lv_gated, 95)
+
+        # Dynamic X-axis: always 50 dB wide, centred on the LRA band midpoint
+        # (p10/p95), snapped to the nearest 5 dB boundary so that both edges
+        # always fall on a 5 dB multiple.
+        lra_center = (p10 + p95) / 2.0
+        center_5 = round(lra_center / 5.0) * 5
+        x_lo = center_5 - 25
+        x_hi = center_5 + 25
+
+        bins = np.arange(x_lo, x_hi + 1, 1)
         ax2.hist(lv_abs, bins=bins, color="#1f77b4", alpha=0.4,
                  edgecolor="none", label="Absolute-gated")
         ax2.hist(lv_gated, bins=bins, color="#1f77b4", alpha=0.8,
@@ -985,9 +997,6 @@ def _plot(result, out_path):
         ax2.axvline(result["integrated_lufs"], color="#d62728", ls=":", lw=2.0,
                     label=f"Integrated {result['integrated_lufs']:.1f} LUFS")
 
-        # p10 / p95 of the double-gated set — identical to _loudness_range()
-        p10 = np.percentile(lv_gated, 10)
-        p95 = np.percentile(lv_gated, 95)
         ax2.axvline(p10, color="#ff7f0e", ls="--", lw=2.0,
                     label=f"p10  {p10:.1f} LUFS")
         ax2.axvline(p95, color="#2ca02c", ls="--", lw=2.0,
@@ -1003,7 +1012,7 @@ def _plot(result, out_path):
         ax2.set_title(f"Loudness Range Distribution  –  LRA {result['lra_lu']:.1f} LU")
         ax2.grid(True, alpha=0.3, axis="y")
         ax2.legend(loc="upper right", fontsize=9)
-        ax2.set_xlim(-50, 0)
+        ax2.set_xlim(x_lo, x_hi)
 
     # ===== Subplot 3: Frequency Response (Center vs LFE) =====
     # freq_audio contains a compact excerpt extracted at _LOUDNESS_SR so that
