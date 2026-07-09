@@ -830,13 +830,9 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
 
     if lfe_idx is not None:
         lfe_data_ds = _lfe_lowpass(data_ds[:, lfe_idx], sr_ds)
-        _tick("LFE loudness / crest / activity 1")
         lfe_loudness = _lfe_loudness(lfe_data_ds, sr_ds)
-        _tick("LFE loudness / crest / activity 2")
         lfe_rms = _lfe_rms_dbfs(lfe_data_ds)
-        _tick("LFE loudness / crest / activity 3")
         lfe_crest = _lfe_crest_factor(lfe_data_ds)
-        _tick("LFE loudness / crest / activity 4")
         lfe_activity = _lfe_activity(lfe_data_ds)
     _tick("LFE loudness / crest / activity")
 
