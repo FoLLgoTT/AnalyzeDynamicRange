@@ -812,17 +812,19 @@ def _plot(result, out_path):
     ax1.axhline(result["integrated_lufs"], color="#d62728", ls="--", lw=1.0,
                 label=f"Integrated {result['integrated_lufs']:.1f} LUFS")
 
-    # Add LRA bounds (10th and 95th percentile of gated loudness)
+    # LRA bounds: apply the same double gate as _loudness_range()
     if not np.isnan(result["lra_lu"]):
-        # For visualization, estimate the bounds
-        lv = short_term[short_term > -70.0]
-        if lv.size > 0:
-            p10 = np.percentile(lv, 10)
-            p95 = np.percentile(lv, 95)
-            ax1.axhline(p95, color="#ff7f0e", ls=":", lw=1.0, alpha=0.7, 
-                        label=f"LRA bounds (10th: {p10:.1f}, 95th: {p95:.1f})")
-            ax1.axhline(p10, color="#ff7f0e", ls=":", lw=1.0, alpha=0.7)
-            ax1.fill_between(t, p10, p95, alpha=0.1, color="#ff7f0e")
+        lv_abs1 = short_term[short_term > _ABS_GATE_LUFS]
+        if lv_abs1.size > 0:
+            rel_gate1 = np.mean(lv_abs1) - _LRA_REL_GATE_LU
+            lv_dg = lv_abs1[lv_abs1 >= rel_gate1]
+            if lv_dg.size > 0:
+                p10 = np.percentile(lv_dg, 10)
+                p95 = np.percentile(lv_dg, 95)
+                ax1.axhline(p95, color="#ff7f0e", ls=":", lw=1.0, alpha=0.7,
+                            label=f"LRA bounds (p10: {p10:.1f}, p95: {p95:.1f})")
+                ax1.axhline(p10, color="#ff7f0e", ls=":", lw=1.0, alpha=0.7)
+                ax1.fill_between(t, p10, p95, alpha=0.1, color="#ff7f0e")
 
     ax1.set_xlabel("Time (s)")
     ax1.set_ylabel("Loudness (LUFS)")
@@ -833,34 +835,40 @@ def _plot(result, out_path):
     ax1.legend(loc="lower right", fontsize=9)
 
     # ===== Subplot 2: Loudness Range Histogram =====
-    # Filter out gated values (below -70 LUFS)
-    lv_gated = short_term[short_term > -70.0]
+    # Apply the same two-stage gate as _loudness_range() / EBU Tech 3342:
+    #   stage 1 – absolute gate at -70 LUFS
+    #   stage 2 – relative gate at -20 LU below the mean of stage-1 values
+    lv_abs = short_term[short_term > _ABS_GATE_LUFS]
 
-    if lv_gated.size > 0:
-        # Create histogram
-        bins = np.arange(-50, 1, 1)  # 1 LUFS bins from -50 to 0
-        ax2.hist(lv_gated, bins=bins, color="#1f77b4", alpha=0.7, edgecolor="black", linewidth=0.5)
+    if lv_abs.size > 0:
+        rel_gate = np.mean(lv_abs) - _LRA_REL_GATE_LU
+        lv_gated = lv_abs[lv_abs >= rel_gate]
 
-        # Add vertical lines for key metrics
+        bins = np.arange(-50, 1, 1)
+        ax2.hist(lv_abs, bins=bins, color="#1f77b4", alpha=0.4,
+                 edgecolor="none", label="Absolute-gated")
+        ax2.hist(lv_gated, bins=bins, color="#1f77b4", alpha=0.8,
+                 edgecolor="black", linewidth=0.4, label="Double-gated (LRA)")
+
         ax2.axvline(result["integrated_lufs"], color="#d62728", ls=":", lw=2.0,
-                   label=f"Integrated {result['integrated_lufs']:.1f} LUFS")
+                    label=f"Integrated {result['integrated_lufs']:.1f} LUFS")
 
-        # Add LRA bounds
+        # p10 / p95 of the double-gated set — identical to _loudness_range()
         p10 = np.percentile(lv_gated, 10)
         p95 = np.percentile(lv_gated, 95)
-        ax2.axvline(p10, color="#ff7f0e", ls="--", lw=2.0, 
-                   label=f"10th percentile {p10:.1f} LUFS")
+        ax2.axvline(p10, color="#ff7f0e", ls="--", lw=2.0,
+                    label=f"p10  {p10:.1f} LUFS")
         ax2.axvline(p95, color="#2ca02c", ls="--", lw=2.0,
-                   label=f"95th percentile {p95:.1f} LUFS")
+                    label=f"p95  {p95:.1f} LUFS")
 
-        # Add gating threshold line
-        ax2.axvline(-70, color="#d62728", ls="-", lw=1.0, alpha=0.3,
-                   label="Absolute gate -70 LUFS")
+        ax2.axvline(_ABS_GATE_LUFS, color="#888888", ls="-", lw=1.0,
+                    alpha=0.5, label=f"Abs. gate {_ABS_GATE_LUFS:.0f} LUFS")
+        ax2.axvline(rel_gate, color="#aaaaaa", ls=":", lw=1.0,
+                    alpha=0.7, label=f"Rel. gate {rel_gate:.1f} LUFS")
 
         ax2.set_xlabel("Loudness (LUFS)")
         ax2.set_ylabel("Count")
-        ax2.set_title(f"Loudness Range Distribution (LRA: {p95 - p10:.1f} LU, "
-                     f"Gated samples: {lv_gated.size}/{short_term.size})")
+        ax2.set_title(f"Loudness Range Distribution  –  LRA {result['lra_lu']:.1f} LU")
         ax2.grid(True, alpha=0.3, axis="y")
         ax2.legend(loc="upper right", fontsize=9)
         ax2.set_xlim(-50, 0)
