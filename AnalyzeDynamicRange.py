@@ -720,7 +720,7 @@ def _surround_rms_relative_to_center(data, sr, effective_layout,
 
 
 def analyze(path, layout=None, lfe_channel=None, per_channel=False,
-            exclude_surround=False):
+            exclude_surround=False, debug=False):
     """Analyse the dynamic range / loudness of an audio file.
 
     Parameters
@@ -971,17 +971,18 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         print("  All channels within acceptable range.")
 
     # -----------------------------------------------------------------------
-    # Pipeline timing summary
+    # Pipeline timing summary (only with --debug)
     # -----------------------------------------------------------------------
-    total_s = sum(t for _, t in _timings)
-    col = max(len(lbl) for lbl, _ in _timings)
-    print("\n=== Pipeline Timing ===")
-    for lbl, t in _timings:
-        bar_len = max(1, int(round(t / total_s * 40)))
-        bar = "█" * bar_len
-        print(f"  {lbl:<{col}}  {t:7.3f} s  {bar}")
-    print(f"  {'─' * col}  {'─' * 7}")
-    print(f"  {'Total':<{col}}  {total_s:7.3f} s")
+    if debug:
+        total_s = sum(t for _, t in _timings)
+        col = max(len(lbl) for lbl, _ in _timings)
+        print("\n=== Pipeline Timing ===")
+        for lbl, t in _timings:
+            bar_len = max(1, int(round(t / total_s * 40)))
+            bar = "█" * bar_len
+            print(f"  {lbl:<{col}}  {t:7.3f} s  {bar}")
+        print(f"  {'─' * col}  {'─' * 7}")
+        print(f"  {'Total':<{col}}  {total_s:7.3f} s")
 
     return {
         "sr": sr,
@@ -1226,6 +1227,8 @@ def main():
                          "--no-plot to suppress the plot")
     ap.add_argument("--no-plot", action="store_true",
                     help="Suppress the plot even when no --plot FILE is given")
+    ap.add_argument("--debug", action="store_true",
+                    help="Print pipeline timing for each analysis step")
     args = ap.parse_args()
 
     # Expand glob patterns; preserve order and deduplicate.
@@ -1258,7 +1261,8 @@ def main():
         result = analyze(path, layout=args.layout,
                          lfe_channel=args.lfe_channel,
                          per_channel=args.per_channel,
-                         exclude_surround=args.exclude_surround)
+                         exclude_surround=args.exclude_surround,
+                         debug=args.debug)
 
         if args.plot is not None and not args.no_plot:
             plot_path = (fixed_plot_path
