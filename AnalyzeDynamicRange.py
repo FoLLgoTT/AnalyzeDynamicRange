@@ -139,7 +139,7 @@ def _channel_weights(n_ch, layout=None, lfe_channel=None,
     """
     # Surround channels are weighted +1.5 dB, or muted when excluded.
     surround = 0.0 if exclude_surround else 1.41
-    weights = np.ones(n_ch, dtype=np.float64)
+    weights = np.ones(n_ch, dtype=np.float32)
 
     if layout is None:
         if n_ch >= 6:
@@ -629,7 +629,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     Returns
         Dict of computed metrics plus the short-term loudness time-series.
     """
-    data, sr = sf.read(path, dtype="float64", always_2d=True)
+    data, sr = sf.read(path, dtype="float32", always_2d=True)
     n_ch = data.shape[1]
 
     # Resolve effective layout once so it can be reused throughout.
