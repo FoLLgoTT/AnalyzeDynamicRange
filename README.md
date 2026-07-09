@@ -1,6 +1,6 @@
 ﻿# AnalyzeDynamicRange
 
-A Python application for analyzing the dynamic range and loudness of film audio files according to international broadcast standards.
+A Python application for analyzing the dynamic range and loudness of movie audio files according to international broadcast standards.
 
 ## Overview
 
@@ -73,10 +73,10 @@ pip install matplotlib
 ### Basic usage
 
 ```bash
-python AnalyzeDynamicRange.py film.wav
+python AnalyzeDynamicRange.py movie.wav
 ```
 
-A plot is generated automatically as `film.png`. Use `--no-plot` to suppress it.
+A plot is generated automatically as `movie.png`. Use `--no-plot` to suppress it.
 
 ### Wildcard and multiple files
 
@@ -87,10 +87,10 @@ Glob patterns are supported on all platforms:
 python AnalyzeDynamicRange.py *.wav
 
 # All WAV files in a subdirectory
-python AnalyzeDynamicRange.py reels/*.wav
+python AnalyzeDynamicRange.py movies/*.wav
 
 # Two explicit files
-python AnalyzeDynamicRange.py reel1.wav reel2.wav
+python AnalyzeDynamicRange.py movie1.wav movie2.wav
 ```
 
 Each file produces its own `<filename>.png` plot. When multiple files match, a separator is printed between each analysis.
@@ -104,11 +104,11 @@ Each file produces its own `<filename>.png` plot. When multiple files match, a s
 Overrides automatic channel layout detection:
 
 ```bash
-python AnalyzeDynamicRange.py film.wav --layout 5.1
-python AnalyzeDynamicRange.py film.wav --layout 6.1
-python AnalyzeDynamicRange.py film.wav --layout 7.1
-python AnalyzeDynamicRange.py film.wav --layout stereo
-python AnalyzeDynamicRange.py film.wav --layout mono
+python AnalyzeDynamicRange.py movie.wav --layout 5.1
+python AnalyzeDynamicRange.py movie.wav --layout 6.1
+python AnalyzeDynamicRange.py movie.wav --layout 7.1
+python AnalyzeDynamicRange.py movie.wav --layout stereo
+python AnalyzeDynamicRange.py movie.wav --layout mono
 ```
 
 ### `--lfe-channel`
@@ -116,7 +116,7 @@ python AnalyzeDynamicRange.py film.wav --layout mono
 Specifies the 0-based index of the LFE channel:
 
 ```bash
-python AnalyzeDynamicRange.py film.wav --lfe-channel 3
+python AnalyzeDynamicRange.py movie.wav --lfe-channel 3
 ```
 
 ### `--per-channel`
@@ -124,7 +124,7 @@ python AnalyzeDynamicRange.py film.wav --lfe-channel 3
 Reports integrated loudness for each individual channel:
 
 ```bash
-python AnalyzeDynamicRange.py film.wav --per-channel
+python AnalyzeDynamicRange.py movie.wav --per-channel
 ```
 
 ### `--exclude-surround`
@@ -132,7 +132,7 @@ python AnalyzeDynamicRange.py film.wav --per-channel
 Excludes surround channels from the loudness sum (front/dialogue analysis only):
 
 ```bash
-python AnalyzeDynamicRange.py film.wav --exclude-surround
+python AnalyzeDynamicRange.py movie.wav --exclude-surround
 ```
 
 ### `--plot` / `--no-plot`
@@ -140,22 +140,22 @@ python AnalyzeDynamicRange.py film.wav --exclude-surround
 The plot is generated **by default**. To control output:
 
 ```bash
-# Default: auto-generates film.png
-python AnalyzeDynamicRange.py film.wav
+# Default: auto-generates movie.png
+python AnalyzeDynamicRange.py movie.wav
 
 # Custom output filename
-python AnalyzeDynamicRange.py film.wav --plot loudness_analysis.png
+python AnalyzeDynamicRange.py movie.wav --plot loudness_analysis.png
 
 # Suppress the plot
-python AnalyzeDynamicRange.py film.wav --no-plot
+python AnalyzeDynamicRange.py movie.wav --no-plot
 ```
 
 | Invocation | Result |
 |---|---|
-| `script.py film.wav` | Plot → `film.png` |
-| `script.py film.wav --plot` | Plot → `film.png` |
-| `script.py film.wav --plot out.png` | Plot → `out.png` |
-| `script.py film.wav --no-plot` | No plot |
+| `script.py movie.wav` | Plot → `movie.png` |
+| `script.py movie.wav --plot` | Plot → `movie.png` |
+| `script.py movie.wav --plot out.png` | Plot → `out.png` |
+| `script.py movie.wav --no-plot` | No plot |
 | `script.py *.wav` | Per-file plots → `<name>.png` |
 | `script.py *.wav --plot out.png` | Warning; falls back to per-file naming |
 
@@ -265,16 +265,16 @@ The LRA is the difference between the **95th and 10th percentile** of the remain
 
 **What it tells you:**
 
-- A **low LRA** means the loudness barely changes throughout the film — the mix is dynamically flat. This is typical of heavily limited or compressed material where loud and quiet scenes sound nearly equally loud. It reduces the emotional impact of the soundtrack.
+- A **low LRA** means the loudness barely changes throughout the movie — the mix is dynamically flat. This is typical of heavily limited or compressed material where loud and quiet scenes sound nearly equally loud. It reduces the emotional impact of the soundtrack.
 - A **high LRA** means the loudness varies widely — quiet dialogue scenes contrast strongly with loud action sequences. This is the intended dynamic behaviour for cinema and high-quality streaming.
 
-**LRA does not measure peak levels.** A film can have a high LRA but still be clipping, or a low LRA but be at a perfectly safe level.
+**LRA does not measure peak levels.** A movie can have a high LRA but still be clipping, or a low LRA but be at a perfectly safe level.
 
 | LRA | Interpretation |
 |---|---|
 | < 5 LU | Heavily compressed — likely over-limited or heavily processed |
 | 5–10 LU | Moderately compressed — typical of broadcast TV |
-| 10–20 LU | Dynamic — typical target for theatrical film mixes |
+| 10–20 LU | Dynamic — typical target for theatrical movie mixes |
 | > 20 LU | Very dynamic — orchestral, documentary, dialogue-heavy drama |
 
 ### DC Offset (dBFS per channel)
@@ -362,12 +362,12 @@ Peak occurs during the downsampling step when the original full-resolution file 
 
 ### Recommendation: analyse representative excerpts
 
-For very long feature film files it is still recommended to **extract a representative excerpt** before running the analysis — for example the middle 5–10 minutes of the film. Loudness metrics (LUFS, LRA) and the frequency response are statistically stable over a few minutes of typical programme content.
+For very long feature movie files it is still recommended to **extract a representative excerpt** before running the analysis — for example the middle 5–10 minutes of the movie. Loudness metrics (LUFS, LRA) and the frequency response are statistically stable over a few minutes of typical programme content.
 
 Example using `ffmpeg` to extract 10 minutes starting at the 30-minute mark:
 
 ```bash
-ffmpeg -ss 00:30:00 -t 00:10:00 -i film.wav -c copy excerpt.wav
+ffmpeg -ss 00:30:00 -t 00:10:00 -i movie.wav -c copy excerpt.wav
 python AnalyzeDynamicRange.py excerpt.wav
 ```
 
