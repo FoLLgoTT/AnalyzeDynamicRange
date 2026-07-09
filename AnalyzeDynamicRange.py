@@ -396,7 +396,7 @@ _LFE_BANDS = [
 # integrated loudness.  Frequency-band statistics are computed only over
 # windows that exceed this threshold so that long silent passages do not
 # distort the results.
-_LFE_ACTIVITY_OFFSET_DB = 30.0
+_LFE_ACTIVITY_OFFSET_DB = 15.0
 
 _SURROUND_HIGHPASS_HZ = 80.0
 _SURROUND_HIGHPASS_ORDER = 4
@@ -425,6 +425,27 @@ def _lfe_lowpass(data_lfe, sr):
     return sosfiltfilt(sos, data_lfe)
 
 
+
+def _lfe_activity_label(pct):
+    if pct > 20:
+        return "insane"
+    if pct > 15:
+        return "very high"
+    if pct > 10:
+        return "high"
+    if pct > 5:
+        return "medium"
+    return "low"
+
+
+def _sub_bass_ratio_label(db):
+    if db > 0:
+        return "very deep"
+    if db > -3:
+        return "deep"
+    if db > -6:
+        return "moderate"
+    return "shallow"
 
 
 def _lfe_band_analysis(data_lfe, sr, integrated_main):
@@ -872,7 +893,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         print(f"  Activity threshold  : {ba['threshold_dBFS']:.1f} dBFS "
               f"(integrated − {_LFE_ACTIVITY_OFFSET_DB:.0f} dB)")
         print(f"  LFE active (total)  : {ba['global_activity_pct']:.1f} % of runtime"
-              f"  ({ba['n_global_active']} / {ba['n_windows']} windows)")
+              f"  ({_lfe_activity_label(ba['global_activity_pct'])})")
         print(f"  Band activity below : % of LFE-active windows where band exceeds threshold")
         print()
         hdr = (f"  {'Band':<12}  {'Act. in active':>14}  "
@@ -898,11 +919,8 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         print()
         if not np.isnan(ba["sub_bass_ratio_db"]):
             r = ba["sub_bass_ratio_db"]
-            depth = ("very deep" if r > 0 else
-                     "deep" if r > -3 else
-                     "moderate" if r > -6 else "shallow")
             print(f"  Sub-bass ratio  (20–40 / 40–120 Hz): {r:+.1f} dB"
-                  f"  [{depth}]")
+                  f"  [{_sub_bass_ratio_label(r)}]")
         if not np.isnan(ba["infra_ratio_db"]):
             r = ba["infra_ratio_db"]
             note = ("[WARN] significant infrasound" if r > -20 else
@@ -1112,7 +1130,8 @@ def _plot(result, out_path):
     lfe_lines = ["LFE Band Analysis"]
     if ba is not None:
         lfe_lines.append(
-            f"  Active       {ba['global_activity_pct']:5.1f} % of runtime")
+            f"  Active       {ba['global_activity_pct']:5.1f} % of runtime"
+            f"  ({_lfe_activity_label(ba['global_activity_pct'])})")
         lfe_lines.append(f"  {'Band':<12} {'Act%':>5} {'P95':>6} {'Peak':>6}")
         for b in ba["bands"]:
             p95s = (f"{b['p95_rel']:+5.1f}" if not np.isnan(b["p95_rel"])
@@ -1123,11 +1142,8 @@ def _plot(result, out_path):
                 f"  {b['label']:<12} {b['activity_pct']:5.1f} {p95s} {pks}")
         if not np.isnan(ba["sub_bass_ratio_db"]):
             r = ba["sub_bass_ratio_db"]
-            depth = ("very deep" if r > 0 else
-                     "deep" if r > -3 else
-                     "moderate" if r > -6 else "shallow")
             lfe_lines.append(
-                f"  Sub-bass ratio {r:+.1f} dB ({depth})")
+                f"  Sub-bass ratio {r:+.1f} dB ({_sub_bass_ratio_label(r)})")
         if not np.isnan(ba.get("spectral_centroid_hz", float("nan"))):
             lfe_lines.append(
                 f"  Centroid    {ba['spectral_centroid_hz']:.0f} Hz")
