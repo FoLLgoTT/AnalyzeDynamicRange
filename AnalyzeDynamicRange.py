@@ -1026,7 +1026,7 @@ def _plot(result, out_path):
                   height_ratios=[1.3, 0.5, 0.75, 0.35, 2.0],
                   width_ratios=[4.5, 1])
     ax1 = fig.add_subplot(gs[0, :])       # loudness over time  – full width
-    ax2 = fig.add_subplot(gs[1:3, 0])     # histogram           – left, 2 rows tall
+    ax2 = fig.add_subplot(gs[1:4, 0])     # histogram           – left, 3 rows tall
     ax4_rel = fig.add_subplot(gs[1, 1])   # channel RMS         – top right
     ax4_lfe = fig.add_subplot(gs[2, 1])   # LFE metrics         – middle right
     ax4_sum = fig.add_subplot(gs[3, 1])   # summary             – bottom right
@@ -1187,9 +1187,9 @@ def _plot(result, out_path):
                 else "n/a")
     sum_lines = [
         "Summary",
-        f'  Loudness range     : "{lra_lbl}"',
-        f'  LFE activity       : "{act_lbl}"',
-        f'  Bass characteristics: "{bass_lbl}"',
+        f'  Loudness range : "{lra_lbl}"',
+        f'  LFE activity   : "{act_lbl}"',
+        f'  Bass character : "{bass_lbl}"',
     ]
     ax4_sum.axis('off')
     ax4_sum.text(0.03, 0.97, "\n".join(sum_lines),
