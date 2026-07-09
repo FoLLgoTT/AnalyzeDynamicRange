@@ -35,6 +35,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 import numpy as np
@@ -420,12 +421,13 @@ def _plot(result, out_path):
     # Short-term windows are 3 s long, hopped by step_s; centre the curve.
     t = np.arange(short_term.size) * result["step_s"] + 1.5
 
-    fig, ax = plt.subplots(figsize=(12, 4))
+    fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(t, short_term, lw=0.8, color="#1f77b4", label="Short-term loudness")
     ax.axhline(result["integrated_lufs"], color="#d62728", ls="--", lw=1.0,
                label=f"Integrated {result['integrated_lufs']:.1f} LUFS")
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Loudness (LUFS)")
+    ax.set_ylim(-60, 0)
     ax.set_title(f"Film loudness over time  -  LRA "
                  f"{result['lra_lu']:.1f} LU, true peak "
                  f"{result['true_peak_dbtp']:.1f} dBTP")
@@ -452,8 +454,9 @@ def main():
     ap.add_argument("--exclude-surround", action="store_true",
                     help="Exclude the surround channels from the analysis "
                          "(front/dialogue-only loudness)")
-    ap.add_argument("--plot", metavar="FILE", default=None,
-                    help="Render the short-term loudness curve to an image")
+    ap.add_argument("--plot", nargs="?", const="AUTO", default=None, metavar="FILE",
+                    help="Render the short-term loudness curve to an image "
+                         "(omit FILE to use input filename with .png extension)")
     args = ap.parse_args()
 
     result = analyze(args.audio, layout=args.layout,
@@ -461,8 +464,13 @@ def main():
                      per_channel=args.per_channel,
                      exclude_surround=args.exclude_surround)
 
-    if args.plot:
-        _plot(result, args.plot)
+    if args.plot is not None:
+        # If --plot is used without a filename, generate from input filename
+        if args.plot == "AUTO":
+            plot_path = os.path.splitext(args.audio)[0] + ".png"
+        else:
+            plot_path = args.plot
+        _plot(result, plot_path)
 
 
 if __name__ == "__main__":

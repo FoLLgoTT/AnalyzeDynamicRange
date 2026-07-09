@@ -1,4 +1,4 @@
-# AnalyzeDynamicRange.py
+# AnalyzeDynamicRange
 
 A Python application for analyzing the dynamic range and loudness of film audio files according to international broadcast standards.
 
@@ -122,9 +122,13 @@ python AnalyzeDynamicRange.py film.wav --exclude-surround
 Surround channels receive a weight of 0.0 instead of +1.5 dB.
 
 #### `--plot`
-Creates a plot of the short-term loudness curve:
+Creates a plot of the short-term loudness curve. You can specify a custom filename or omit it to use the input filename with `.png` extension:
 
 ```bash
+# Auto-generate filename (film.wav ? film.png)
+python AnalyzeDynamicRange.py film.wav --plot
+
+# Specify custom filename
 python AnalyzeDynamicRange.py film.wav --plot loudness_plot.png
 ```
 
@@ -132,6 +136,7 @@ The plot displays:
 - Blue curve: Short-term loudness (3-second windows)
 - Red dashed line: Integrated loudness reference
 - Title with LRA and true peak information
+- Fixed Y-axis range: -60 to 0 LUFS (for consistent comparison across different files)
 
 **Note:** Requires `matplotlib`. Install with: `pip install matplotlib`
 
@@ -268,10 +273,18 @@ The file is heavily compressed. This is normal for certain content but may be un
 
 ## Examples
 
-### Analyze a 5.1 film mix with plot
+### Analyze a 5.1 film mix with auto-generated plot
 
 ```bash
-python AnalyzeDynamicRange.py film_final.wav --layout 5.1 --plot loudness_curve.png
+python AnalyzeDynamicRange.py film_final.wav --layout 5.1 --plot
+```
+
+This will create `film_final.png` automatically.
+
+### Analyze with custom plot filename
+
+```bash
+python AnalyzeDynamicRange.py film_final.wav --plot loudness_curve.png
 ```
 
 ### Front-channel only analysis
