@@ -869,7 +869,7 @@ def _plot(result, out_path):
 
     ax1.set_xlabel("Time (s)")
     ax1.set_ylabel("Loudness (LUFS)")
-    ax1.set_ylim(-50, 0)
+    ax1.set_ylim(-55, -5)
     ax1.set_title(f"Film loudness over time  -  LRA {result['lra_lu']:.1f} LU, "
                   f"true peak {result['true_peak_dbtp']:.1f} dBTP")
     ax1.grid(True, alpha=0.3)
