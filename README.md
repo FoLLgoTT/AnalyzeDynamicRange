@@ -1,6 +1,6 @@
 ﻿# AnalyzeDynamicRange
 
-A Python application for analyzing the dynamic range and loudness of movie audio files according to international broadcast standards.
+A Python application for analyzing the dynamic range, LFE activity and low-end extension of movie audio files.
 
 ![example.png](https://github.com/FoLLgoTT/AnalyzeDynamicRange/blob/main/example.png)
 
