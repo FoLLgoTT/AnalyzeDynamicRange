@@ -272,10 +272,10 @@ The LRA is the difference between the **95th and 10th percentile** of the remain
 
 | LRA | Interpretation |
 |---|---|
-| < 5 LU | Heavily compressed — likely over-limited or heavily processed |
-| 5–10 LU | Moderately compressed — typical of broadcast TV |
-| 10–20 LU | Dynamic — typical target for theatrical movie mixes |
-| > 20 LU | Very dynamic — orchestral, documentary, dialogue-heavy drama |
+| <20 LU | Low|
+| 20 - 25 LU | Medium |
+| 25 - 30 LU | High|
+| >30 LU | Very high|
 
 ### DC Offset (dBFS per channel)
 
