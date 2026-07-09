@@ -313,11 +313,26 @@ Standard channel order follows SMPTE/ITU:
 
 ### Loudness Range (LRA, LU)
 
-| Range | Interpretation |
+LRA measures how much the loudness *varies over time*. It is computed per **EBU Tech 3342** using a two-stage gate on short-term loudness values (3-second windows):
+
+1. **Absolute gate** — blocks below −70 LUFS are discarded (silence).
+2. **Relative gate** — blocks more than −20 LU below the mean of the remaining values are also discarded (very quiet passages that are not representative of the programme content).
+
+The LRA is the difference between the **95th and 10th percentile** of the remaining values, expressed in Loudness Units (LU).
+
+**What it tells you:**
+
+- A **low LRA** means the loudness barely changes throughout the film — the mix is dynamically flat. This is typical of heavily limited or compressed material where loud and quiet scenes sound nearly equally loud. It reduces the emotional impact of the soundtrack.
+- A **high LRA** means the loudness varies widely — quiet dialogue scenes contrast strongly with loud action sequences. This is the intended dynamic behaviour for cinema and high-quality streaming.
+
+**LRA does not measure peak levels.** A film can have a high LRA but still be clipping, or a low LRA but be at a perfectly safe level. LRA and PLR together give a complete picture.
+
+| LRA | Interpretation |
 |---|---|
-| < 5 LU | Heavily compressed |
-| 5–10 LU | Moderately compressed |
-| > 10 LU | Dynamic (drama, classical) |
+| < 5 LU | Heavily compressed — likely over-limited or heavily processed |
+| 5–10 LU | Moderately compressed — typical of broadcast TV |
+| 10–20 LU | Dynamic — typical target for theatrical film mixes |
+| > 20 LU | Very dynamic — orchestral, documentary, dialogue-heavy drama |
 
 ### True Peak (dBTP)
 
@@ -338,13 +353,27 @@ Standard channel order follows SMPTE/ITU:
 
 ### PLR — Peak-to-Loudness Ratio (LU)
 
-PLR = True Peak (dBTP) − Integrated Loudness (LUFS).  
-A higher PLR means more headroom relative to the loudness anchor.
+```
+PLR = True Peak (dBTP) − Integrated Loudness (LUFS)
+```
+
+PLR measures how much **headroom** a mix has between its loudest transient peaks and its perceived loudness level. It reflects the *crest factor at the programme level* — how much peak energy exists relative to the average energy the listener perceives.
+
+**What it tells you:**
+
+- A **high PLR** means the mix has strong transient peaks that are much louder than the average loudness — the dynamic structure is intact. Explosions, impacts, and percussive hits stand out above the dialogue bed. This is the natural behaviour of a well-mixed film soundtrack.
+- A **low PLR** means the peaks have been pushed down close to the average loudness level. This is the fingerprint of heavy limiting or dynamic range compression: the transients have been clipped or squeezed, and the mix sounds "loud all the time." The soundtrack loses punch and fatigue sets in quickly.
+
+**Relationship to LRA:**  
+LRA and PLR are complementary. LRA describes *macro-dynamics* (scene-to-scene variation over minutes), while PLR describes *micro-dynamics* (transient peaks within a moment). A film can have a good LRA but a poor PLR if individual channels are heavily limited even though the overall programme loudness varies.
+
+**Reference values (EBU R128 / SMPTE ST 2095-1):**
 
 | PLR | Assessment |
 |---|---|
-| ≥ 18 LU | Sufficient headroom (EBU R128 / SMPTE ST 2095-1 guidance) |
-| < 18 LU | [WARN] Mix may be over-compressed or lacks headroom |
+| ≥ 18 LU | Sufficient headroom — transients are preserved |
+| 14–18 LU | Reduced headroom — some limiting likely present |
+| < 14 LU | [WARN] Heavy limiting — transients significantly compressed |
 
 ### DC Offset (dBFS per channel)
 
