@@ -42,7 +42,7 @@ Frequency bands:
 
 | Band | Range | Perception |
 |---|---|---|
-| Infrasound | < 20 Hz | Not audible; pressure/vibration sensation or artefact |
+| Infrasound | < 20 Hz | Not audible; pressure/vibration sensation or artefact; bass shakers |
 | Sub-bass | 20–40 Hz | Mainly tactile (body sensation, bass shakers) |
 | Bass | 40–80 Hz | Heard and felt; core LFE impact |
 | Upper LFE | 80–120 Hz | Mainly audible; crossover region to main speakers |
@@ -418,44 +418,6 @@ The script loads the entire file into RAM at the original sample rate. The follo
 | 3 h | 7.1 | 48 kHz | ~12 GB |
 
 Peak occurs during the downsampling step when the original full-resolution file and the 16 kHz copy briefly coexist. After that point RAM stays at around 1/3 of the raw-file size.
-
-### Recommendation: analyse representative excerpts
-
-For very long feature movie files it is still recommended to **extract a representative excerpt** before running the analysis — for example the middle 5–10 minutes of the movie. Loudness metrics (LUFS, LRA) and the frequency response are statistically stable over a few minutes of typical programme content.
-
-Example using `ffmpeg` to extract 10 minutes starting at the 30-minute mark:
-
-```bash
-ffmpeg -ss 00:30:00 -t 00:10:00 -i movie.wav -c copy excerpt.wav
-python AnalyzeDynamicRange.py excerpt.wav
-```
-
----
-
-## Troubleshooting
-
-### `ModuleNotFoundError: No module named 'soundfile'`
-
-```bash
-pip install numpy scipy soundfile
-```
-
-### `Not enough audio to plot a short-term loudness curve`
-
-The file is too short (< ~4 s). The script needs enough blocks for meaningful short-term loudness analysis.
-
-### Low LRA (< 5 LU) info
-
-The file is heavily compressed. Normal for some content; check if intentional for dynamic material.
-
----
-
-## Standards and References
-
-- **ITU-R BS.1770-4**: Algorithms to measure audio programme loudness and true-peak audio level
-- **EBU R128**: Loudness normalisation and permitted maximum level
-- **EBU Tech 3342**: Loudness Range — a measure to supplement loudness normalisation
-- **ATSC A/85**: Techniques for establishing and maintaining audio loudness for DTV
 
 ---
 
