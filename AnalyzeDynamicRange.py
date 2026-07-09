@@ -31,7 +31,8 @@ Usage
     python AnalyzeDynamicRange.py film.wav
     python AnalyzeDynamicRange.py film.wav --per-channel
     python AnalyzeDynamicRange.py film.wav --exclude-surround
-    python AnalyzeDynamicRange.py film.wav --plot loudness.png
+    python AnalyzeDynamicRange.py film.wav --plot
+    python AnalyzeDynamicRange.py film.wav --plot loudness_analysis.png
 """
 
 from __future__ import annotations
@@ -528,7 +529,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
 
 
 def _plot(result, out_path):
-    """Render the short-term loudness time-series to an image file."""
+    """Render the short-term loudness time-series and histogram to an image file."""
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -544,21 +545,71 @@ def _plot(result, out_path):
     # Short-term windows are 3 s long, hopped by step_s; centre the curve.
     t = np.arange(short_term.size) * result["step_s"] + 1.5
 
-    fig, ax = plt.subplots(figsize=(12, 8))
-    ax.plot(t, short_term, lw=0.8, color="#1f77b4", label="Short-term loudness")
-    ax.axhline(result["integrated_lufs"], color="#d62728", ls="--", lw=1.0,
-               label=f"Integrated {result['integrated_lufs']:.1f} LUFS")
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Loudness (LUFS)")
-    ax.set_ylim(-50, 0)
-    ax.set_title(f"Film loudness over time  -  LRA "
-                 f"{result['lra_lu']:.1f} LU, true peak "
-                 f"{result['true_peak_dbtp']:.1f} dBTP")
-    ax.grid(True, alpha=0.3)
-    ax.legend(loc="lower right")
+    # Create figure with 2 subplots: time-series and histogram
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+
+    # ===== Subplot 1: Loudness over time =====
+    ax1.plot(t, short_term, lw=0.8, color="#1f77b4", label="Short-term loudness")
+    ax1.axhline(result["integrated_lufs"], color="#d62728", ls="--", lw=1.0,
+                label=f"Integrated {result['integrated_lufs']:.1f} LUFS")
+
+    # Add LRA bounds (10th and 95th percentile of gated loudness)
+    if not np.isnan(result["lra_lu"]):
+        # For visualization, estimate the bounds
+        lv = short_term[short_term > -70.0]
+        if lv.size > 0:
+            p10 = np.percentile(lv, 10)
+            p95 = np.percentile(lv, 95)
+            ax1.axhline(p95, color="#ff7f0e", ls=":", lw=1.0, alpha=0.7, 
+                        label=f"LRA bounds (10th: {p10:.1f}, 95th: {p95:.1f})")
+            ax1.axhline(p10, color="#ff7f0e", ls=":", lw=1.0, alpha=0.7)
+            ax1.fill_between(t, p10, p95, alpha=0.1, color="#ff7f0e")
+
+    ax1.set_xlabel("Time (s)")
+    ax1.set_ylabel("Loudness (LUFS)")
+    ax1.set_ylim(-50, 0)
+    ax1.set_title(f"Film loudness over time  -  LRA {result['lra_lu']:.1f} LU, "
+                  f"true peak {result['true_peak_dbtp']:.1f} dBTP")
+    ax1.grid(True, alpha=0.3)
+    ax1.legend(loc="lower right", fontsize=9)
+
+    # ===== Subplot 2: Loudness Range Histogram =====
+    # Filter out gated values (below -70 LUFS)
+    lv_gated = short_term[short_term > -70.0]
+
+    if lv_gated.size > 0:
+        # Create histogram
+        bins = np.arange(-50, 1, 1)  # 1 LUFS bins from -50 to 0
+        ax2.hist(lv_gated, bins=bins, color="#1f77b4", alpha=0.7, edgecolor="black", linewidth=0.5)
+
+        # Add vertical lines for key metrics
+        ax2.axvline(result["integrated_lufs"], color="#d62728", ls="--", lw=2.0,
+                   label=f"Integrated {result['integrated_lufs']:.1f} LUFS")
+
+        # Add LRA bounds
+        p10 = np.percentile(lv_gated, 10)
+        p95 = np.percentile(lv_gated, 95)
+        ax2.axvline(p10, color="#ff7f0e", ls=":", lw=1.5, 
+                   label=f"10th percentile {p10:.1f} LUFS")
+        ax2.axvline(p95, color="#2ca02c", ls=":", lw=1.5,
+                   label=f"95th percentile {p95:.1f} LUFS")
+
+        # Add gating threshold line
+        ax2.axvline(-70, color="#d62728", ls="-", lw=1.0, alpha=0.3,
+                   label="Absolute gate -70 LUFS")
+
+        ax2.set_xlabel("Loudness (LUFS)")
+        ax2.set_ylabel("Count")
+        ax2.set_title(f"Loudness Range Distribution (LRA: {p95 - p10:.1f} LU, "
+                     f"Gated samples: {lv_gated.size}/{short_term.size})")
+        ax2.grid(True, alpha=0.3, axis="y")
+        ax2.legend(loc="upper right", fontsize=9)
+        ax2.set_xlim(-50, 0)
+
     fig.tight_layout()
     fig.savefig(out_path, dpi=120)
     print(f"\n  [PLOT] {out_path}")
+
 
 
 def main():

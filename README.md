@@ -128,21 +128,36 @@ python AnalyzeDynamicRange.py film.wav --exclude-surround
 Surround channels receive a weight of 0.0 instead of +1.5 dB.
 
 #### `--plot`
-Creates a plot of the short-term loudness curve. You can specify a custom filename or omit it to use the input filename with `.png` extension:
+Creates a detailed plot of the loudness analysis. You can specify a custom filename or omit it to use the input filename with `.png` extension:
 
 ```bash
 # Auto-generate filename (film.wav ? film.png)
 python AnalyzeDynamicRange.py film.wav --plot
 
 # Specify custom filename
-python AnalyzeDynamicRange.py film.wav --plot loudness_plot.png
+python AnalyzeDynamicRange.py film.wav --plot loudness_analysis.png
 ```
 
-The plot displays:
+The plot displays two subplots:
+
+**Top: Loudness Over Time**
 - Blue curve: Short-term loudness (3-second windows)
 - Red dashed line: Integrated loudness reference
-- Title with LRA and true peak information
-- Fixed Y-axis range: -60 to 0 LUFS (for consistent comparison across different files)
+- Orange shaded area: Loudness Range bounds (10th to 95th percentile)
+- Fixed Y-axis range: -60 to 0 LUFS
+
+**Bottom: Loudness Range Distribution (Histogram)**
+- Histogram of short-term loudness values showing dynamic range distribution
+- Red dashed line: Integrated loudness
+- Orange dotted line: 10th percentile (LRA lower bound)
+- Green dotted line: 95th percentile (LRA upper bound)
+- Dark red line: Absolute gating threshold (-70 LUFS)
+
+The histogram helps identify:
+- Compression level of the mix (narrow histogram = compressed)
+- Dynamic range (wide histogram = dynamic)
+- Gating effectiveness
+- Loudness distribution characteristics
 
 **Note:** Requires `matplotlib`. Install with: `pip install matplotlib`
 
