@@ -20,10 +20,12 @@ These standards are internationally recognized and used in the film industry, st
 | **Integrated Loudness** | LUFS | Gated programme loudness across the entire file |
 | **Loudness Range (LRA)** | LU | Dynamic range per EBU Tech 3342 |
 | **True Peak** | dBTP | Inter-sample peak at 4× oversampling |
+| **PLR** | LU | Peak-to-Loudness Ratio = True Peak − Integrated Loudness |
 | **DR Score** | integer | Crest-factor-based dynamic range metric |
 | **RMS Level** | dBFS | Overall RMS across all channels |
 | **Momentary Loudness** | LUFS | Time series over 400 ms windows |
 | **Short-term Loudness** | LUFS | Time series over 3-second windows |
+| **DC Offset** | dBFS | Per-channel mean signal bias |
 
 ### LFE Channel Metrics (120 Hz low-pass applied before all measurements)
 
@@ -114,6 +116,7 @@ Surround ch  : [5, 6] (weighted +1.5 dB)
   Integrated loudness :   -23.45 LUFS
   Loudness range (LRA):    11.20 LU
   True peak           :    -3.50 dBTP
+  PLR                 :    19.95 LU
   DR score            :       12
   RMS level           :   -30.15 dBFS
   Momentary max       :   -18.30 LUFS
@@ -138,6 +141,16 @@ Surround ch  : [5, 6] (weighted +1.5 dB)
   LFE  (Ch 4)         :  -26.80 dBFS  -8.46 dB rel. C
   Ls   (Ch 5)         :  -24.15 dBFS  -5.81 dB rel. C
   Rs   (Ch 6)         :  -23.98 dBFS  -5.64 dB rel. C
+
+=== DC Offset ===
+  Warning threshold   : 1e-04 (-80 dBFS)
+  Channel  1          : +1.20e-06  (-118.4 dBFS)
+  Channel  2          : -8.50e-07  (-121.4 dBFS)
+  Channel  3          : +2.10e-06  (-113.5 dBFS)
+  Channel  4          : +4.30e-07  (-127.3 dBFS)
+  Channel  5          : +1.80e-06  (-114.9 dBFS)
+  Channel  6          : -9.60e-07  (-120.4 dBFS)
+  All channels within acceptable range.
 ```
 
 ---
@@ -322,6 +335,25 @@ Standard channel order follows SMPTE/ITU:
 | 7–10 | Modern pop/rock |
 | 11–15 | Dynamic content |
 | > 15 | Very dynamic (orchestral) |
+
+### PLR — Peak-to-Loudness Ratio (LU)
+
+PLR = True Peak (dBTP) − Integrated Loudness (LUFS).  
+A higher PLR means more headroom relative to the loudness anchor.
+
+| PLR | Assessment |
+|---|---|
+| ≥ 18 LU | Sufficient headroom (EBU R128 / SMPTE ST 2095-1 guidance) |
+| < 18 LU | [WARN] Mix may be over-compressed or lacks headroom |
+
+### DC Offset (dBFS per channel)
+
+The arithmetic mean of all samples in a channel. Non-zero DC causes audible clicks at edit points and can saturate output stages.
+
+| Level | Assessment |
+|---|---|
+| < −80 dBFS (< 1×10⁻⁴ linear) | Acceptable |
+| ≥ −80 dBFS | [WARN] DC offset present — apply a high-pass filter |
 
 ---
 

@@ -307,6 +307,51 @@ def _rms_dbfs(data):
     return 20.0 * np.log10(max(float(rms), _EPS))
 
 
+# DC offset above this linear threshold triggers a [WARN].
+_DC_OFFSET_WARN_LINEAR = 1e-4   # ≈ −80 dBFS
+
+
+def _dc_offset_per_channel(data):
+    """Compute the DC offset of every channel.
+
+    The DC offset is the arithmetic mean of all samples and represents a
+    constant bias in the signal.  Non-zero DC causes audible clicks at edit
+    points and can saturate output stages.
+
+    Parameters
+        data  Audio array of shape (n_samples, n_channels).
+
+    Returns
+        List of (channel_index, dc_linear, dc_dbfs) tuples, one per channel.
+        dc_linear is signed; dc_dbfs is computed from the absolute value.
+    """
+    results = []
+    for ch in range(data.shape[1]):
+        dc = float(np.mean(data[:, ch]))
+        dc_dbfs = 20.0 * np.log10(max(abs(dc), _EPS))
+        results.append((ch, dc, dc_dbfs))
+    return results
+
+
+def _plr(true_peak_dbtp, integrated_lufs):
+    """Peak-to-Loudness Ratio (PLR) in LU.
+
+    PLR = True Peak (dBTP) − Integrated Loudness (LUFS).  A higher PLR means
+    more headroom relative to the loudness anchor.  Film mixes should target
+    PLR ≥ 18 LU (EBU R128 / SMPTE ST 2095-1 guidance).
+
+    Parameters
+        true_peak_dbtp    Overall true peak in dBTP.
+        integrated_lufs   Integrated loudness in LUFS.
+
+    Returns
+        PLR in LU, or NaN when integrated loudness is NaN.
+    """
+    if np.isnan(integrated_lufs):
+        return float("nan")
+    return true_peak_dbtp - integrated_lufs
+
+
 _FREQ_RESPONSE_TARGET_SR = 800
 _FREQ_RESPONSE_F_MIN = 2.0
 _FREQ_RESPONSE_F_MAX = 200.0
@@ -658,11 +703,13 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     true_peak, tp_per_ch = _true_peak_dbtp(data, sr)
     dr = _dr_score(data, sr)
     rms = _rms_dbfs(data)
+    plr = _plr(true_peak, integrated)
 
     print("=== Dynamic Range / Loudness ===")
     print(f"  Integrated loudness : {integrated:8.1f} LUFS")
     print(f"  Loudness range (LRA): {lra:8.1f} LU")
     print(f"  True peak           : {true_peak:8.1f} dBTP")
+    print(f"  PLR                 : {plr:8.1f} LU")
     print(f"  DR score            : {dr:8.0f}")
     print(f"  RMS level           : {rms:8.1f} dBFS")
     if momentary.size:
@@ -676,6 +723,9 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     if true_peak > -1.0:
         print(f"  [WARN] True peak exceeds -1 dBTP - risk of clipping on "
               f"downstream conversion.")
+    if not np.isnan(plr) and plr < 18.0:
+        print(f"  [WARN] PLR {plr:.1f} LU < 18 LU - mix may be over-compressed "
+              f"or lacks sufficient headroom.")
     if not np.isnan(lra) and lra < 5.0:
         print(f"  [INFO] Low LRA ({lra:.1f} LU) - heavily compressed for film.")
 
@@ -753,12 +803,26 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         for label, rms_dbfs, rel_db in surround_results:
             print(f"  {label}     : {rms_dbfs:8.1f} dBFS  {rel_db:+.1f} dB rel. C")
 
+    # DC offset
+    dc_offsets = _dc_offset_per_channel(data)
+    any_dc_warn = any(abs(dc) >= _DC_OFFSET_WARN_LINEAR for _, dc, _ in dc_offsets)
+    print("\n=== DC Offset ===")
+    print(f"  Warning threshold   : {_DC_OFFSET_WARN_LINEAR:.0e} "
+          f"({20.0 * np.log10(_DC_OFFSET_WARN_LINEAR):.0f} dBFS)")
+    for ch_idx, dc_lin, dc_dbfs in dc_offsets:
+        warn = "  [WARN]" if abs(dc_lin) >= _DC_OFFSET_WARN_LINEAR else ""
+        print(f"  Channel {ch_idx + 1:2d}          : "
+              f"{dc_lin:+.2e}  ({dc_dbfs:6.1f} dBFS){warn}")
+    if not any_dc_warn:
+        print("  All channels within acceptable range.")
+
     return {
         "sr": sr,
         "n_channels": n_ch,
         "integrated_lufs": integrated,
         "lra_lu": lra,
         "true_peak_dbtp": true_peak,
+        "plr_lu": plr,
         "dr_score": dr,
         "rms_dbfs": rms,
         "short_term": short_term,
@@ -771,6 +835,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         "lfe_activity_percent": lfe_activity,
         "center_rms_dbfs": center_dbfs,
         "surround_rms": surround_results,
+        "dc_offsets": dc_offsets,
         "audio_data": data,  # Raw audio for frequency analysis
     }
 
@@ -830,7 +895,8 @@ def _plot(result, out_path):
     ax1.set_ylabel("Loudness (LUFS)")
     ax1.set_ylim(-50, 0)
     ax1.set_title(f"Film loudness over time  -  LRA {result['lra_lu']:.1f} LU, "
-                  f"true peak {result['true_peak_dbtp']:.1f} dBTP")
+                  f"true peak {result['true_peak_dbtp']:.1f} dBTP, "
+                  f"PLR {result['plr_lu']:.1f} LU")
     ax1.grid(True, alpha=0.3)
     ax1.legend(loc="lower right", fontsize=9)
 
