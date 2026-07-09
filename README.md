@@ -25,9 +25,9 @@ These standards are internationally recognized and used in the film industry, st
 | **Momentary Loudness** | LUFS | Time series over 400 ms windows |
 | **Short-term Loudness** | LUFS | Time series over 3-second windows |
 
-### LFE Band Analysis (120 Hz low-pass applied before all measurements)
+### LFE Band Analysis
 
-The LFE channel is divided into four frequency bands. All level metrics are expressed **relative to the main-mix integrated loudness** so results are comparable across films with different overall levels. Statistics are computed only over LFE-active windows (short-term RMS ≥ integrated − 15 dB) to prevent long silent passages from distorting the results.
+The LFE channel is divided into four frequency bands. All level metrics are expressed **relative to the main-mix integrated loudness** so results are comparable across films with different overall levels. Statistics are computed only over LFE-active windows (short-term RMS ≥ integrated − 15 dB) to prevent long silent passages from distorting the results. A low pass at 120 Hz is applied before LFE analysis to remove unwanted high frequency content (clipping etc.).
 
 | Metric | Unit | Description |
 |--------|------|-------------|
@@ -65,6 +65,9 @@ All channels are measured against the unfiltered Center channel (Ch 3) as refere
 - **Double gating**: Absolute gate at −70 LUFS + relative gate −10 LU below mean (integrated loudness); −20 LU below mean (LRA) — both per EBU Tech 3342
 - **Surround Channels**: Automatic +1.5 dB weighting per BS.1770
 - **LFE Exclusion**: Subwoofer channel excluded from the loudness sum
+
+### Frequency response
+Low-end frequency response is shown for Center, Left and LFE channels. In this analysis high pass filtering can be observed.
 
 ---
 
@@ -426,17 +429,6 @@ The script loads the entire file into RAM at the original sample rate. The follo
 1. The entire audio is **downsampled to 16 kHz** immediately after reading. All metrics (K-weighted loudness, LRA, RMS, LFE loudness/crest, surround RMS) are computed from this compact representation. The downsampled copy is ~3× smaller for a 48 kHz source.
 2. The **original full-resolution array is immediately freed** after the downsampling step.
 3. The **frequency-response plot** uses 16 kHz, so no large array is retained after analysis.
-
-### Approximate peak RAM requirement
-
-| Duration | Channels | Source SR | Peak RAM (approx.) |
-|---|---|---|---|
-| 10 min | stereo | 48 kHz | < 0.1 GB |
-| 30 min | 5.1 | 48 kHz | ~0.3 GB |
-| 2 h | 7.1 | 48 kHz | ~8 GB |
-| 3 h | 7.1 | 48 kHz | ~12 GB |
-
-Peak occurs during the downsampling step when the original full-resolution file and the 16 kHz copy briefly coexist. After that point RAM stays at around 1/3 of the raw-file size.
 
 ---
 
