@@ -13,12 +13,12 @@ so no extra packages beyond numpy/scipy/soundfile are required):
     - Momentary / Short-term loudness    time-series (400 ms / 3 s windows)
 
 Channel handling
-    By default a standard channel order is assumed for the loudness sum:
+    By default a Microsoft wave format channel order is assumed for the loudness sum:
         mono   : [C]
         stereo : [L, R]
         5.1    : [L, R, C, LFE, Ls, Rs]
-        6.1    : [L, R, C, LFE, Ls, Rs, Rc]
-        7.1    : [L, R, C, LFE, Ls, Rs, Lrs, Rrs]
+        6.1    : [L, R, C, LFE, Rc, Ls, Rs]
+        7.1    : [L, R, C, LFE, Lrs, Rrs, Ls, Rs]
     The LFE is excluded and surround channels are weighted +1.5 dB per BS.1770.
     Use --layout / --lfe-channel to override.
 
@@ -153,22 +153,22 @@ def _channel_weights(n_ch, layout=None, lfe_channel=None,
         else:
             layout = "auto"
 
-    # Standard SMPTE/ITU order: L R C LFE Ls Rs [Rc] [Lrs Rrs].
+    # Channel order: L R C LFE [Rc] [Lrs Rrs] Ls Rs.
     if layout == "5.1" and n_ch >= 6:
         weights[3] = 0.0                 # LFE excluded
         weights[4] = surround            # Ls
         weights[5] = surround            # Rs
     elif layout == "6.1" and n_ch >= 7:
         weights[3] = 0.0                 # LFE excluded
-        weights[4] = surround            # Ls
-        weights[5] = surround            # Rs
-        weights[6] = surround            # Rc (Rear Center)
+        weights[4] = surround            # Rc (Rear Center)
+        weights[5] = surround            # Ls
+        weights[6] = surround            # Rs
     elif layout == "7.1" and n_ch >= 8:
         weights[3] = 0.0                 # LFE excluded
-        weights[4] = surround            # Ls
-        weights[5] = surround            # Rs
-        weights[6] = surround            # Lrs
-        weights[7] = surround            # Rrs
+        weights[4] = surround            # Lrs
+        weights[5] = surround            # Rrs
+        weights[6] = surround            # Ls
+        weights[7] = surround            # Rs
     elif layout == "auto":
         # Weight any channel beyond the front L/R/C as surround.
         if n_ch > 3:
@@ -477,23 +477,6 @@ def _lfe_crest_factor(data_lfe):
         return float("nan")
     return 20.0 * np.log10(max(float(peak / rms), _EPS))
 
-
-def _lfe_activity(data_lfe, threshold_dbfs=-50):
-    """Percentage of time LFE is above threshold.
-
-    Parameters
-        data_lfe        LFE channel data.
-        threshold_dbfs  Activity threshold in dBFS.
-
-    Returns
-        Percentage of active samples (0-100).
-    """
-    threshold_linear = 10.0 ** (threshold_dbfs / 20.0)
-    active_samples = np.sum(np.abs(data_lfe) > threshold_linear)
-    activity_percent = 100.0 * active_samples / len(data_lfe)
-    return activity_percent
-
-
 def _surround_highpass(data_ch, sr):
     """Apply a zero-phase Butterworth high-pass filter at _SURROUND_HIGHPASS_HZ.
 
@@ -534,8 +517,8 @@ def _surround_rms_relative_to_center(data, sr, effective_layout,
         all    : L = 0, R = 1, C = 2 (reference)
         >= 5.1 : LFE = 3
         5.1    : Ls = 4, Rs = 5
-        6.1    : Ls = 4, Rs = 5, Rc = 6
-        7.1    : Ls = 4, Rs = 5, Lrs = 6, Rrs = 7
+        6.1    : Rc = 4, Ls = 5, Rs = 6
+        7.1    : Lrs = 4, Rrs = 5, Ls = 6, Rs = 7
 
     Parameters
         data              Full audio array of shape (n_samples, n_channels).
@@ -559,30 +542,30 @@ def _surround_rms_relative_to_center(data, sr, effective_layout,
     # channel_map entries: (0-based index, display label, filter)
     # filter is one of: 'none' | 'lowpass' | 'highpass'
     channel_map = [
-        (0, "L    (Ch 1)", "none"),
-        (1, "R    (Ch 2)", "none"),
+        (0, "L  ", "none"),
+        (1, "R  ", "none"),
     ]
 
     if n_ch >= 4:
-        channel_map.append((3, "LFE  (Ch 4)", "lowpass"))
+        channel_map.append((3, "LFE", "lowpass"))
 
     if effective_layout == "7.1":
         channel_map += [
-            (4, "Ls   (Ch 5)", "highpass"),
-            (5, "Rs   (Ch 6)", "highpass"),
-            (6, "Lrs  (Ch 7)", "highpass"),
-            (7, "Rrs  (Ch 8)", "highpass"),
+            (4, "Lrs ", "highpass"),
+            (5, "Rrs ", "highpass"),
+            (6, "Ls", "highpass"),
+            (7, "Rs", "highpass"),
         ]
     elif effective_layout == "6.1":
         channel_map += [
-            (4, "Ls   (Ch 5)", "highpass"),
-            (5, "Rs   (Ch 6)", "highpass"),
-            (6, "Rc   (Ch 7)", "highpass"),
+            (4, "Rc ", "highpass"),
+            (5, "Ls ", "highpass"),
+            (6, "Rs ", "highpass"),
         ]
     elif n_ch >= 6:
         channel_map += [
-            (4, "Ls   (Ch 5)", "highpass"),
-            (5, "Rs   (Ch 6)", "highpass"),
+            (4, "Ls ", "highpass"),
+            (5, "Rs ", "highpass"),
         ]
 
     channel_map = [(i, lbl, flt) for i, lbl, flt in channel_map if i < n_ch]
@@ -786,7 +769,6 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     lfe_loudness = float("nan")
     lfe_rms = float("nan")
     lfe_crest = float("nan")
-    lfe_activity = float("nan")
     lfe_data_ds = None  # kept alive until after _surround_rms_relative_to_center
 
     if lfe_idx is not None:
@@ -794,8 +776,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         lfe_loudness = _lfe_loudness(lfe_data_ds, sr_ds)
         lfe_rms = _lfe_rms_dbfs(lfe_data_ds)
         lfe_crest = _lfe_crest_factor(lfe_data_ds)
-        lfe_activity = _lfe_activity(lfe_data_ds)
-    _tick("LFE loudness / crest / activity")
+    _tick("LFE loudness / crest")
 
     if lfe_idx is not None:
         print("\n=== LFE Channel Analysis ===")
@@ -807,7 +788,6 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
             print(f"  LFE-to-main ratio   : {lfe_ratio:8.1f} dB")
         print(f"  LFE RMS level       : {lfe_rms:8.1f} dBFS")
         print(f"  LFE crest factor    : {lfe_crest:8.1f} dB")
-        print(f"  LFE activity        : {lfe_activity:8.1f} %")
 
         if not np.isnan(lfe_loudness) and not np.isnan(integrated):
             ratio = lfe_loudness - integrated
@@ -831,9 +811,9 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
               f"(Butterworth order {_LFE_LOWPASS_ORDER}, zero-phase)")
         print(f"  High-pass (surround): {_SURROUND_HIGHPASS_HZ:.0f} Hz "
               f"(Butterworth order {_SURROUND_HIGHPASS_ORDER}, single-pass)")
-        print(f"  C    (Ch 3)         : {center_dbfs:8.1f} dBFS  (reference, unfiltered)")
+        print(f"  C (reference)       : {center_dbfs:8.1f} dBFS")
         for label, rms_dbfs, rel_db in surround_results:
-            print(f"  {label}     : {rms_dbfs:8.1f} dBFS  {rel_db:+.1f} dB rel. C")
+            print(f"  {label:<20}: {rel_db:+8.1f} dB")
 
     # DC offset (at _LOUDNESS_SR; DC is frequency-zero and unaffected by
     # resampling except for negligible filter-edge artefacts)
@@ -841,12 +821,10 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     any_dc_warn = any(abs(dc) >= _DC_OFFSET_WARN_LINEAR for _, dc, _ in dc_offsets)
     _tick("DC offset")
     print("\n=== DC Offset ===")
-    print(f"  Warning threshold   : {_DC_OFFSET_WARN_LINEAR:.0e} "
-          f"({20.0 * np.log10(_DC_OFFSET_WARN_LINEAR):.0f} dBFS)")
+    print(f"  Warning threshold: {20.0 * np.log10(_DC_OFFSET_WARN_LINEAR):.0f} dBFS")
     for ch_idx, dc_lin, dc_dbfs in dc_offsets:
-        warn = "  [WARN]" if abs(dc_lin) >= _DC_OFFSET_WARN_LINEAR else ""
-        print(f"  Channel {ch_idx + 1:2d}          : "
-              f"{dc_lin:+.2e}  ({dc_dbfs:6.1f} dBFS){warn}")
+        if abs(dc_lin) >= _DC_OFFSET_WARN_LINEAR:
+            print(f"  Channel {ch_idx + 1:2d}: {dc_dbfs:6.1f} dBFS [WARNING]")
     if not any_dc_warn:
         print("  All channels within acceptable range.")
 
@@ -875,7 +853,6 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         "lfe_loudness": lfe_loudness,
         "lfe_rms_dbfs": lfe_rms,
         "lfe_crest_factor": lfe_crest,
-        "lfe_activity_percent": lfe_activity,
         "center_rms_dbfs": center_dbfs,
         "surround_rms": surround_results,
         "dc_offsets": dc_offsets,
@@ -1040,7 +1017,6 @@ def _plot(result, out_path):
         f"  LFE/Main     {_fv(lfe_ratio,                     '%+7.1f')} dB",
         f"  RMS          {_fv(result['lfe_rms_dbfs'],         '%7.1f')} dBFS",
         f"  Crest        {_fv(result['lfe_crest_factor'],     '%7.1f')} dB",
-        f"  Activity     {_fv(result['lfe_activity_percent'], '%7.1f')} %",
     ]
 
     ax4_lfe.axis('off')
@@ -1055,9 +1031,9 @@ def _plot(result, out_path):
     center_dbfs = result["center_rms_dbfs"]
     rel_lines = ["Channel RMS relative to Center"]
     if not (isinstance(center_dbfs, float) and np.isnan(center_dbfs)):
-        rel_lines.append(f"  {'C  (Ch 3)':<12}  [ref]")
+        rel_lines.append(f"  C (ref): {center_dbfs:+8.1f} dBFS")
         for label, _rms_dbfs, rel_db in surround_results:
-            rel_lines.append(f"  {label:<12}  {rel_db:+.1f} dB")
+            rel_lines.append(f"  {label:<7}: {rel_db:+8.1f} dB")
 
     ax4_rel.axis('off')
     ax4_rel.text(0.03, 0.97, "\n".join(rel_lines),

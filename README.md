@@ -32,7 +32,6 @@ These standards are internationally recognized and used in the film industry, st
 | **LFE-to-Main Ratio** | dB | Level difference between LFE and main mix |
 | **LFE RMS** | dBFS | RMS level of the LFE channel |
 | **LFE Crest Factor** | dB | Peak-to-RMS ratio of LFE |
-| **LFE Activity** | % | Time above −50 dBFS threshold |
 
 ### Channel Level Metrics (relative to Center)
 
@@ -95,54 +94,6 @@ python AnalyzeDynamicRange.py reel1.wav reel2.wav
 ```
 
 Each file produces its own `<filename>.png` plot. When multiple files match, a separator is printed between each analysis.
-
-### Example output (5.1 file)
-
-```
-File         : film_5.1.wav
-Sample rate  : 48000 Hz
-Channels     : 6
-Duration     : 120.5 s
-
-Excluded ch  : [4] (LFE, not part of loudness sum)
-Surround ch  : [5, 6] (weighted +1.5 dB)
-
-=== Dynamic Range / Loudness ===
-  Integrated loudness :   -23.45 LUFS
-  Loudness range (LRA):    11.20 LU
-  RMS level           :   -30.15 dBFS
-  Momentary max       :   -18.30 LUFS
-  Short-term max      :   -20.10 LUFS
-  Short-term min      :   -32.50 LUFS
-
-=== LFE Channel Analysis ===
-  Low-pass filter     : 120 Hz (Butterworth order 4, zero-phase)
-  LFE loudness        :   -31.20 LUFS
-  LFE-to-main ratio   :    -7.75 dB
-  LFE RMS level       :   -32.80 dBFS
-  LFE crest factor    :    12.35 dB
-  LFE activity        :    65.50 %
-
-=== Channel RMS relative to Center ===
-  Low-pass  (LFE)     : 120 Hz (Butterworth order 4, zero-phase)
-  High-pass (surround):  80 Hz (Butterworth order 4, zero-phase)
-  C    (Ch 3)         :  -18.34 dBFS  (reference, unfiltered)
-  L    (Ch 1)         :  -19.12 dBFS  -0.78 dB rel. C
-  R    (Ch 2)         :  -19.05 dBFS  -0.71 dB rel. C
-  LFE  (Ch 4)         :  -26.80 dBFS  -8.46 dB rel. C
-  Ls   (Ch 5)         :  -24.15 dBFS  -5.81 dB rel. C
-  Rs   (Ch 6)         :  -23.98 dBFS  -5.64 dB rel. C
-
-=== DC Offset ===
-  Warning threshold   : 1e-04 (-80 dBFS)
-  Channel  1          : +1.20e-06  (-118.4 dBFS)
-  Channel  2          : -8.50e-07  (-121.4 dBFS)
-  Channel  3          : +2.10e-06  (-113.5 dBFS)
-  Channel  4          : +4.30e-07  (-127.3 dBFS)
-  Channel  5          : +1.80e-06  (-114.9 dBFS)
-  Channel  6          : -9.60e-07  (-120.4 dBFS)
-  All channels within acceptable range.
-```
 
 ---
 
@@ -250,7 +201,7 @@ Both the bounds and the title value are computed using the same double-gating lo
 
 ### Panel 3 — LFE Channel Analysis
 
-Text box showing all LFE metrics (loudness, LFE/Main ratio, RMS, crest factor, activity).
+Text box showing all LFE metrics (loudness, LFE/Main ratio, RMS, crest factor).
 
 ### Panel 4 — Channel RMS relative to Center
 
@@ -271,15 +222,15 @@ Text box showing the RMS level of each channel relative to the unfiltered Center
 
 ## Channel Layouts
 
-Standard channel order follows SMPTE/ITU:
+Channel order according to Microsoft wave format (see [here](https://sourceforge.net/p/mesh2hrtf-tools/wiki/Confusion_of_7-1%20and%205-1_channel_order_in_Windows/)):
 
 | Layout | Channels |
 |--------|----------|
 | Mono (1 ch) | C |
 | Stereo (2 ch) | L R |
 | 5.1 (6 ch) | L R C LFE Ls Rs |
-| 6.1 (7 ch) | L R C LFE Ls Rs Rc |
-| 7.1 (8 ch) | L R C LFE Ls Rs Lrs Rrs |
+| 6.1 (7 ch) | L R C LFE Rc Ls Rs |
+| 7.1 (8 ch) | L R C LFE Lrs Rrs Ls Rs |
 
 ### Channel weighting (BS.1770)
 
@@ -349,15 +300,6 @@ The LFE channel is analyzed **after** applying a zero-phase Butterworth low-pass
 | −8 to −12 dB | Ideal range |
 | < −15 dB | LFE very quiet |
 
-### LFE Activity
-
-| Activity | Content type |
-|---|---|
-| 0–20 % | Minimal LFE (dialogue-heavy) |
-| 20–50 % | Moderate LFE (general cinema) |
-| 50–80 % | Heavy LFE (action) |
-| > 80 % | Constant bass |
-
 ---
 
 ## Channel RMS relative to Center
@@ -369,8 +311,8 @@ Surround channels reported per layout:
 | Layout | Channels reported |
 |---|---|
 | 5.1 | Ls (4), Rs (5) |
-| 6.1 | Ls (4), Rs (5), Rc (6) |
-| 7.1 | Ls (4), Rs (5), Lrs (6), Rrs (7) |
+| 6.1 | Rc (4), Ls (5), Rs (6) |
+| 7.1 | Lrs (4), Rrs (5), Ls (6), Rs (7) |
 
 ---
 
@@ -403,7 +345,7 @@ All formats supported by `libsndfile` / `soundfile`:
 
 The script loads the entire file into RAM at the original sample rate. The following optimisations keep peak RAM well below the raw-file size:
 
-1. The entire audio is **downsampled to 16 kHz** immediately after reading. All metrics (K-weighted loudness, LRA, RMS, LFE loudness/crest/activity, surround RMS, DC offset) are computed from this compact representation. The downsampled copy is ~3× smaller for a 48 kHz source.
+1. The entire audio is **downsampled to 16 kHz** immediately after reading. All metrics (K-weighted loudness, LRA, RMS, LFE loudness/crest, surround RMS, DC offset) are computed from this compact representation. The downsampled copy is ~3× smaller for a 48 kHz source.
 2. The **original full-resolution array is immediately freed** after the downsampling step.
 3. The **frequency-response plot** uses 16 kHz, so no large array is retained after analysis.
 
