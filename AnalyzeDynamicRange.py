@@ -1248,6 +1248,8 @@ def main():
                          "--no-plot to suppress the plot")
     ap.add_argument("--no-plot", action="store_true",
                     help="Suppress the plot even when no --plot FILE is given")
+    ap.add_argument("--skip-existing", action="store_true",
+                    help="Skip files whose plot PNG already exists on disk")
     ap.add_argument("--debug", action="store_true",
                     help="Print pipeline timing for each analysis step")
     args = ap.parse_args()
@@ -1274,6 +1276,14 @@ def main():
         fixed_plot_path = None
 
     for i, path in enumerate(paths):
+        plot_path = (fixed_plot_path
+                     if fixed_plot_path
+                     else os.path.splitext(path)[0] + ".png")
+
+        if args.skip_existing and os.path.exists(plot_path):
+            print(f"[SKIP] Plot already exists, skipping: {path}")
+            continue
+
         if len(paths) > 1:
             print(f"\n{'=' * 64}")
             print(f"  File {i + 1}/{len(paths)}: {path}")
@@ -1286,9 +1296,6 @@ def main():
                          debug=args.debug)
 
         if args.plot is not None and not args.no_plot:
-            plot_path = (fixed_plot_path
-                         if fixed_plot_path
-                         else os.path.splitext(path)[0] + ".png")
             _plot(result, plot_path)
 
 
