@@ -6,8 +6,8 @@ A Python application for analyzing the dynamic range and loudness of movie audio
 
 `AnalyzeDynamicRange.py` analyzes audio files and calculates professional loudness metrics according to:
 
-- **ITU-R BS.1770-4** (International Telecommunication Union)
-- **EBU R128** (European Broadcasting Union)
+- **[ITU-R BS.1770-4](https://www.itu.int/rec/R-REC-BS.1770-4-201510-S/en)** (International Telecommunication Union)
+- **[EBU R128](https://tech.ebu.ch/docs/tech/tech3341.pdf)** (European Broadcasting Union)
 
 These standards are internationally recognized and used in the film industry, streaming services, and broadcasting to standardize audio content consistently and technically correctly.
 
