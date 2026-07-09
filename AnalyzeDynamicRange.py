@@ -304,6 +304,60 @@ def _rms_dbfs(data):
     return 20.0 * np.log10(max(float(rms), _EPS))
 
 
+def _frequency_response(audio_data, sr, target_sr=1000, freq_min=1, freq_max=200):
+    """Calculate frequency response magnitude spectrum in dBFS.
+
+    Parameters
+        audio_data    Audio signal (1D array).
+        sr            Original sample rate in Hz.
+        target_sr     Target sample rate for analysis (Hz).
+        freq_min      Minimum frequency to analyze (Hz).
+        freq_max      Maximum frequency to analyze (Hz).
+
+    Returns
+        Tuple of (frequencies, magnitudes_dbfs)
+        frequencies are in Hz, magnitudes in dBFS
+    """
+    # Downsample to target sample rate if needed
+    if sr != target_sr:
+        # Calculate downsampling ratio
+        ratio = sr / target_sr
+        if ratio > 1:
+            # Downsample by integer factor or resample
+            n_samples_downsampled = int(len(audio_data) / ratio)
+            audio_downsampled = resample_poly(audio_data, target_sr, sr)
+        else:
+            audio_downsampled = audio_data
+    else:
+        audio_downsampled = audio_data
+        target_sr = sr
+
+    # Apply FFT
+    fft_result = np.fft.fft(audio_downsampled)
+    freqs = np.fft.fftfreq(len(fft_result), 1 / target_sr)
+
+    # Only take positive frequencies
+    positive_freq_mask = freqs > 0
+    freqs = freqs[positive_freq_mask]
+    magnitudes = np.abs(fft_result[positive_freq_mask])
+
+    # Convert to dBFS (normalize by maximum value and full-scale)
+    # Assuming audio is normalized to [-1, 1]
+    max_magnitude = np.max(magnitudes)
+    if max_magnitude > 0:
+        magnitudes_dbfs = 20.0 * np.log10(magnitudes / max_magnitude)
+    else:
+        magnitudes_dbfs = np.full_like(magnitudes, -np.inf)
+
+    # Filter to requested frequency range
+    freq_mask = (freqs >= freq_min) & (freqs <= freq_max)
+    freqs = freqs[freq_mask]
+    magnitudes_dbfs = magnitudes_dbfs[freq_mask]
+
+    return freqs, magnitudes_dbfs
+
+
+
 def _lfe_loudness(data_lfe, sr):
     """Measure LFE channel loudness separately (LUFS).
 
@@ -525,11 +579,12 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         "lfe_rms_dbfs": lfe_rms,
         "lfe_crest_factor": lfe_crest,
         "lfe_activity_percent": lfe_activity,
+        "audio_data": data,  # Raw audio for frequency analysis
     }
 
 
 def _plot(result, out_path):
-    """Render the short-term loudness time-series and histogram to an image file."""
+    """Render loudness analysis: time-series, histogram, and frequency response."""
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -545,8 +600,8 @@ def _plot(result, out_path):
     # Short-term windows are 3 s long, hopped by step_s; centre the curve.
     t = np.arange(short_term.size) * result["step_s"] + 1.5
 
-    # Create figure with 2 subplots: time-series and histogram
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+    # Create figure with 3 subplots
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 14))
 
     # ===== Subplot 1: Loudness over time =====
     ax1.plot(t, short_term, lw=0.8, color="#1f77b4", label="Short-term loudness")
@@ -605,6 +660,34 @@ def _plot(result, out_path):
         ax2.grid(True, alpha=0.3, axis="y")
         ax2.legend(loc="upper right", fontsize=9)
         ax2.set_xlim(-50, 0)
+
+    # ===== Subplot 3: Frequency Response (Center vs LFE) =====
+    audio_data = result["audio_data"]
+    sr = result["sr"]
+    n_ch = result["n_channels"]
+
+    # Get Center channel (index 2) and LFE channel (index 3)
+    center_idx = 2 if n_ch > 2 else None
+    lfe_idx = 3 if n_ch > 3 else None
+
+    if center_idx is not None and audio_data.shape[1] > center_idx:
+        center_data = audio_data[:, center_idx]
+        freqs_center, mag_center = _frequency_response(center_data, sr, target_sr=1000, 
+                                                        freq_min=1, freq_max=200)
+        ax3.plot(freqs_center, mag_center, lw=1.5, color="#1f77b4", label="Center (Ch 3)")
+
+    if lfe_idx is not None and audio_data.shape[1] > lfe_idx:
+        lfe_data = audio_data[:, lfe_idx]
+        freqs_lfe, mag_lfe = _frequency_response(lfe_data, sr, target_sr=1000,
+                                                  freq_min=1, freq_max=200)
+        ax3.plot(freqs_lfe, mag_lfe, lw=1.5, color="#d62728", label="LFE (Ch 4)")
+
+    ax3.set_xlabel("Frequency (Hz)")
+    ax3.set_ylabel("Magnitude (dBFS)")
+    ax3.set_xlim(1, 200)
+    ax3.set_title("Frequency Response: Center vs LFE (1kHz resampling)")
+    ax3.grid(True, alpha=0.3)
+    ax3.legend(loc="upper right", fontsize=9)
 
     fig.tight_layout()
     fig.savefig(out_path, dpi=120)
