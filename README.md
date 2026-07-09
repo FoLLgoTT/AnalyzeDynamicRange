@@ -4,7 +4,8 @@ A Python application for analyzing the dynamic range and loudness of film audio 
 
 ## Overview
 
-`AnalyzeDynamicRange.py` analyzes audio files and calculates professional loudness metrics according to the standards:
+`AnalyzeDynamicRange.py` analyzes audio files and calculates professional loudness metrics according to:
+
 - **ITU-R BS.1770-4** (International Telecommunication Union)
 - **EBU R128** (European Broadcasting Union)
 
@@ -12,62 +13,101 @@ These standards are internationally recognized and used in the film industry, st
 
 ## Features
 
-The script calculates the following metrics:
+### Loudness and Dynamic Range Metrics
 
 | Metric | Unit | Description |
 |--------|------|-------------|
-| **Integrated Loudness** | LUFS | Filtered overall loudness across the entire file with gating |
-| **Loudness Range (LRA)** | LU | Dynamic range according to EBU Tech 3342 |
-| **True Peak** | dBTP | Inter-sample peak at 4x oversampling (headroom control) |
-| **DR Score** | integer | Crest-factor-based metric (higher = more dynamic) |
-| **RMS Level** | dBFS | Overall RMS amplitude across all channels |
+| **Integrated Loudness** | LUFS | Gated programme loudness across the entire file |
+| **Loudness Range (LRA)** | LU | Dynamic range per EBU Tech 3342 |
+| **True Peak** | dBTP | Inter-sample peak at 4× oversampling |
+| **DR Score** | integer | Crest-factor-based dynamic range metric |
+| **RMS Level** | dBFS | Overall RMS across all channels |
 | **Momentary Loudness** | LUFS | Time series over 400 ms windows |
 | **Short-term Loudness** | LUFS | Time series over 3-second windows |
-| **LFE Loudness** | LUFS | Low-frequency effects (subwoofer) channel loudness |
+
+### LFE Channel Metrics (120 Hz low-pass applied before all measurements)
+
+| Metric | Unit | Description |
+|--------|------|-------------|
+| **LFE Loudness** | LUFS | Integrated loudness of the LFE channel |
 | **LFE-to-Main Ratio** | dB | Level difference between LFE and main mix |
-| **LFE Peak** | dBTP | True peak of LFE channel |
+| **LFE True Peak** | dBTP | True peak of the LFE channel |
+| **LFE RMS** | dBFS | RMS level of the LFE channel |
 | **LFE Crest Factor** | dB | Peak-to-RMS ratio of LFE |
-| **LFE Activity** | % | Percentage of time LFE channel is active |
+| **LFE Activity** | % | Time above −50 dBFS threshold |
 
-### Special Features
+### Channel Level Metrics (relative to Center)
 
-- **K-Weighting Filter**: Natively implemented BS.1770-4 high-frequency weighting
-- **Intelligent Gating**: 
-  - Absolute gating at -70 LUFS
-  - Relative gating 10 dB below the mean
-- **Surround Channels**: Automatic +1.5 dB weighting
-- **LFE Exclusion**: Subwoofer channel is automatically excluded from the loudness sum
-- **4x Oversampling**: For correct true peak measurement (up to 96 kHz)
+All channels are measured against the unfiltered Center channel (Ch 3) as reference.
+
+| Channel | Filter applied |
+|---------|---------------|
+| L, R | none |
+| LFE | low-pass at 120 Hz (Butterworth order 4, zero-phase) |
+| Ls, Rs, Rc, Lrs, Rrs | high-pass at 80 Hz (Butterworth order 4, zero-phase) |
+
+### Signal Processing
+
+- **K-Weighting Filter**: Natively implemented BS.1770-4 two-stage biquad filter
+- **Double gating**: Absolute gate at −70 LUFS + relative gate −10 LU below mean (integrated loudness); −20 LU below mean (LRA) — both per EBU Tech 3342
+- **Surround Channels**: Automatic +1.5 dB weighting per BS.1770
+- **LFE Exclusion**: Subwoofer channel excluded from the loudness sum
+- **4× Oversampling**: Correct true peak measurement up to 96 kHz
+
+---
 
 ## Installation
 
-### Required Packages
+### Required packages
 
 ```bash
 pip install numpy scipy soundfile
 ```
 
-### Optional (for plotting)
+### Optional (for plots)
 
 ```bash
 pip install matplotlib
 ```
 
+---
+
 ## Usage
 
-### Basic Usage
+### Basic usage
 
 ```bash
 python AnalyzeDynamicRange.py film.wav
 ```
 
-Example output:
+A plot is generated automatically as `film.png`. Use `--no-plot` to suppress it.
+
+### Wildcard and multiple files
+
+Glob patterns are supported on all platforms:
+
+```bash
+# All WAV files in the current directory
+python AnalyzeDynamicRange.py *.wav
+
+# All WAV files in a subdirectory
+python AnalyzeDynamicRange.py reels/*.wav
+
+# Two explicit files
+python AnalyzeDynamicRange.py reel1.wav reel2.wav
 ```
-File         : film.wav
+
+Each file produces its own `<filename>.png` plot. When multiple files match, a separator is printed between each analysis.
+
+### Example output (5.1 file)
+
+```
+File         : film_5.1.wav
 Sample rate  : 48000 Hz
 Channels     : 6
 Duration     : 120.5 s
 
+Excluded ch  : [4] (LFE, not part of loudness sum)
 Surround ch  : [5, 6] (weighted +1.5 dB)
 
 === Dynamic Range / Loudness ===
@@ -79,28 +119,33 @@ Surround ch  : [5, 6] (weighted +1.5 dB)
   Momentary max       :   -18.30 LUFS
   Short-term max      :   -20.10 LUFS
   Short-term min      :   -32.50 LUFS
+
+=== LFE Channel Analysis ===
+  Low-pass filter     : 120 Hz (Butterworth order 4, zero-phase)
+  LFE loudness        :   -31.20 LUFS
+  LFE-to-main ratio   :    -7.75 dB
+  LFE peak            :    -1.50 dBTP
+  LFE RMS level       :   -32.80 dBFS
+  LFE crest factor    :    12.35 dB
+  LFE activity        :    65.50 %
+
+=== Channel RMS relative to Center ===
+  Low-pass  (LFE)     : 120 Hz (Butterworth order 4, zero-phase)
+  High-pass (surround):  80 Hz (Butterworth order 4, zero-phase)
+  C    (Ch 3)         :  -18.34 dBFS  (reference, unfiltered)
+  L    (Ch 1)         :  -19.12 dBFS  -0.78 dB rel. C
+  R    (Ch 2)         :  -19.05 dBFS  -0.71 dB rel. C
+  LFE  (Ch 4)         :  -26.80 dBFS  -8.46 dB rel. C
+  Ls   (Ch 5)         :  -24.15 dBFS  -5.81 dB rel. C
+  Rs   (Ch 6)         :  -23.98 dBFS  -5.64 dB rel. C
 ```
 
-### Options
+---
 
-#### `--per-channel`
-Shows loudness and true peak for each channel individually:
+## Options
 
-```bash
-python AnalyzeDynamicRange.py film.wav --per-channel
-```
+### `--layout`
 
-```
-=== Per-channel integrated loudness ===
-  Channel  1:   -23.12 LUFS  true peak   -3.20 dBTP
-  Channel  2:   -23.78 LUFS  true peak   -3.45 dBTP
-  Channel  3:   -22.95 LUFS  true peak   -2.80 dBTP
-  Channel  4:    -35.00 LUFS  true peak  -25.00 dBTP (LFE, excluded from sum)
-  Channel  5:   -26.50 LUFS  true peak   -5.10 dBTP (surround)
-  Channel  6:   -27.10 LUFS  true peak   -5.30 dBTP (surround)
-```
-
-#### `--layout`
 Overrides automatic channel layout detection:
 
 ```bash
@@ -111,271 +156,266 @@ python AnalyzeDynamicRange.py film.wav --layout stereo
 python AnalyzeDynamicRange.py film.wav --layout mono
 ```
 
-#### `--lfe-channel`
-Specifies the 0-based index of the LFE channel (excluded from loudness sum):
+### `--lfe-channel`
+
+Specifies the 0-based index of the LFE channel:
 
 ```bash
 python AnalyzeDynamicRange.py film.wav --lfe-channel 3
 ```
 
-#### `--exclude-surround`
-Excludes surround channels (analyzes front/dialogue loudness only):
+### `--per-channel`
+
+Reports integrated loudness and true peak for each individual channel:
+
+```bash
+python AnalyzeDynamicRange.py film.wav --per-channel
+```
+
+### `--exclude-surround`
+
+Excludes surround channels from the loudness sum (front/dialogue analysis only):
 
 ```bash
 python AnalyzeDynamicRange.py film.wav --exclude-surround
 ```
 
-Surround channels receive a weight of 0.0 instead of +1.5 dB.
+### `--plot` / `--no-plot`
 
-#### `--plot`
-Creates a detailed plot of the loudness analysis. You can specify a custom filename or omit it to use the input filename with `.png` extension:
+The plot is generated **by default**. To control output:
 
 ```bash
-# Auto-generate filename (film.wav → film.png)
-python AnalyzeDynamicRange.py film.wav --plot
+# Default: auto-generates film.png
+python AnalyzeDynamicRange.py film.wav
 
-# Specify custom filename
+# Custom output filename
 python AnalyzeDynamicRange.py film.wav --plot loudness_analysis.png
+
+# Suppress the plot
+python AnalyzeDynamicRange.py film.wav --no-plot
 ```
 
-The plot displays three subplots:
+| Invocation | Result |
+|---|---|
+| `script.py film.wav` | Plot → `film.png` |
+| `script.py film.wav --plot` | Plot → `film.png` |
+| `script.py film.wav --plot out.png` | Plot → `out.png` |
+| `script.py film.wav --no-plot` | No plot |
+| `script.py *.wav` | Per-file plots → `<name>.png` |
+| `script.py *.wav --plot out.png` | Warning; falls back to per-file naming |
 
-**Top: Loudness Over Time**
+---
+
+## Plot
+
+The plot is saved as a PNG (120 dpi) and contains **four panels**:
+
+```
+┌────────────────────────────────────────────────┐
+│  1. Loudness over time              (full width)│
+└────────────────────────────────────────────────┘
+┌───────────────────────────┬────────────────────┐
+│  2. LRA Histogram (wider) │  3. LFE Analysis   │
+│                           ├────────────────────┤
+│                           │  4. Channel RMS    │
+│                           │     rel. Center    │
+└───────────────────────────┴────────────────────┘
+┌────────────────────────────────────────────────┐
+│  5. Frequency Response              (full width)│
+└────────────────────────────────────────────────┘
+```
+
+### Panel 1 — Loudness over time
+
 - Blue curve: Short-term loudness (3-second windows)
 - Red dashed line: Integrated loudness reference
-- Orange shaded area: Loudness Range bounds (10th to 95th percentile)
-- Fixed Y-axis range: -60 to 0 LUFS
+- Orange shaded band: LRA bounds (p10 to p95 of double-gated values)
+- Y-axis: −50 to 0 LUFS
 
-**Middle: Loudness Range Distribution (Histogram)**
-- Histogram of short-term loudness values showing dynamic range distribution
-- Red dashed line: Integrated loudness
-- Orange dotted line: 10th percentile (LRA lower bound)
-- Green dotted line: 95th percentile (LRA upper bound)
-- Dark red line: Absolute gating threshold (-70 LUFS)
+### Panel 2 — Loudness Range Distribution
 
-The histogram helps identify:
-- Compression level of the mix (narrow histogram = compressed)
-- Dynamic range (wide histogram = dynamic)
-- Gating effectiveness
-- Loudness distribution characteristics
+- Light bars: Absolute-gated values (> −70 LUFS)
+- Dark bars: Double-gated values used for LRA calculation
+- Red dotted line: Integrated loudness
+- Orange dashed line: p10 (LRA lower bound)
+- Green dashed line: p95 (LRA upper bound)
+- Grey lines: Absolute and relative gate thresholds
+- Title displays the EBU Tech 3342 LRA value — identical to Panel 1
 
-**Bottom: Frequency Response (Center vs LFE)**
-- Blue curve: Center channel (Ch 3) frequency response
-- Red curve: LFE channel (Ch 4) frequency response
-- X-axis: 1-200 Hz (optimized frequency range)
-- Y-axis: Magnitude in dBFS
-- Analysis performed at 1 kHz sampling rate for precision
+Both the bounds and the title value are computed using the same double-gating logic as `_loudness_range()`, so the LRA shown in both panels is always identical.
 
-This frequency response plot helps identify:
-- Frequency balance between Center and LFE
-- Bass distribution (typically 1-120 Hz for LFE)
-- Center channel presence (typically 100-200 Hz overlap)
+### Panel 3 — LFE Channel Analysis
 
-**Note:** Requires `matplotlib`. Install with: `pip install matplotlib`
+Text box showing all LFE metrics (loudness, LFE/Main ratio, true peak, RMS, crest factor, activity).
+
+### Panel 4 — Channel RMS relative to Center
+
+Text box showing the RMS level of each channel relative to the unfiltered Center channel.
+
+### Panel 5 — Frequency Response
+
+- Blue curve: Center channel (Ch 3)
+- Red curve: LFE channel (Ch 4)
+- X-axis: 1–200 Hz, **logarithmic**
+- Y-axis: 50 dB range (normalized to 0 dB peak)
+- **1/24 octave smoothing** via Welch PSD averaged into fractional-octave bands
+- **PCHIP interpolation** onto 500 log-spaced points for a smooth visual curve
+- Signal downsampled to **800 Hz** before analysis for maximum frequency resolution in the 1–200 Hz range (bin spacing ≈ 0.006 Hz)
+
+---
 
 ## Channel Layouts
 
-The script supports multiple channel layouts. The default order follows SMPTE/ITU standard:
+Standard channel order follows SMPTE/ITU:
 
-### Automatic Detection (Standard)
+| Layout | Channels |
+|--------|----------|
+| Mono (1 ch) | C |
+| Stereo (2 ch) | L R |
+| 5.1 (6 ch) | L R C LFE Ls Rs |
+| 6.1 (7 ch) | L R C LFE Ls Rs Rc |
+| 7.1 (8 ch) | L R C LFE Ls Rs Lrs Rrs |
 
-- **Mono** (1 channel): `[C]`
-- **Stereo** (2 channels): `[L, R]`
-- **5.1** (6 channels): `[L, R, C, LFE, Ls, Rs]`
-- **6.1** (7 channels): `[L, R, C, LFE, Ls, Rs, Rc]`
-- **7.1** (8 channels): `[L, R, C, LFE, Ls, Rs, Lrs, Rrs]`
-- **Other**: Channels after position 3 are treated as surround
+### Channel weighting (BS.1770)
 
-### Channel Weighting
+| Channel type | Weight |
+|---|---|
+| L, R, C | 1.0 |
+| LFE | 0.0 (excluded) |
+| Ls, Rs, Rc, Lrs, Rrs | 1.41 (+1.5 dB) |
 
-- **Normal channels** (L, R, C): Weight 1.0
-- **LFE** (Subwoofer): Weight 0.0 (excluded)
-- **Surround** (Ls, Rs, etc.): Weight 1.41 (+1.5 dB)
+---
 
-## Measurement Standards Explained
+## Measurement Standards
 
 ### Integrated Loudness (LUFS)
-The average loudness across the entire file with intelligent silence detection.
 
-**Broadcast Standards:**
-- **Film**: -23 LUFS (DCI, cinema)
-- **TV/Streaming**: -16 to -14 LUFS
-- **Podcasts**: -14 to -16 LUFS
+**Broadcast targets:**
+
+| Platform | Target |
+|---|---|
+| Cinema (DCI) | −23 LUFS |
+| TV / Streaming | −16 to −14 LUFS |
+| Podcasts | −14 to −16 LUFS |
 
 ### Loudness Range (LRA, LU)
-Measures the dynamics/variation of loudness over time.
 
-**Interpretation:**
-- LRA < 5 LU: Heavily compressed (music videos, action)
-- LRA 5-10 LU: Moderately compressed
-- LRA > 10 LU: Dynamic/uncompressed (classical, drama)
+| Range | Interpretation |
+|---|---|
+| < 5 LU | Heavily compressed |
+| 5–10 LU | Moderately compressed |
+| > 10 LU | Dynamic (drama, classical) |
 
 ### True Peak (dBTP)
-The highest peak values measured with 4x oversampling. These can exceed 0 dBFS.
 
-**Safety Margins:**
-- **-1 dBTP**: Standard for digital broadcasting
-- **-3 dBTP**: Conservative safety margin
-- **> 0 dBTP**: Risk of clipping/distortion
+| Level | Meaning |
+|---|---|
+| ≤ −1 dBTP | Safe for digital broadcasting |
+| ≤ −3 dBTP | Conservative safety margin |
+| > 0 dBTP | Risk of clipping |
 
 ### DR Score
-Crest factor of the loudest 20% of audio blocks.
 
-**Typical Values:**
-- DR <= 6: Heavily compressed music
-- DR 7-10: Modern pop/rock
-- DR 11-15: Dynamic content
-- DR > 15: Very dynamic (classical, orchestral)
+| Score | Interpretation |
+|---|---|
+| ≤ 6 | Heavily compressed |
+| 7–10 | Modern pop/rock |
+| 11–15 | Dynamic content |
+| > 15 | Very dynamic (orchestral) |
 
-## LFE (Subwoofer) Channel Analysis
+---
 
-The script automatically analyzes the LFE (Low-Frequency Effects) channel separately when detected:
+## LFE Channel Analysis
 
-### LFE Loudness (LUFS)
-Integrated loudness of the subwoofer channel measured independently.
+The LFE channel is analyzed **after** applying a zero-phase Butterworth low-pass filter at **120 Hz** (order 4). Zero-phase filtering prevents time-domain phase distortion and keeps peak measurements accurate.
 
-**Typical Cinema Values:**
-- **Film**: -31 to -20 LUFS (much quieter than main mix)
-- **Ideal LFE-to-Main Ratio**: -8 to -12 dB below main loudness
+### LFE-to-Main Ratio guidelines
 
-### LFE Peak (dBTP)
-Maximum peak level of the LFE channel with 4x oversampling.
+| Ratio | Assessment |
+|---|---|
+| > −6 dB | LFE too loud |
+| −8 to −12 dB | Ideal range |
+| < −15 dB | LFE very quiet |
 
-**Safety Margins:**
-- **-1 dBTP**: Standard headroom
-- **> 0 dBTP**: Risk of clipping
+### LFE Activity
 
-### LFE Crest Factor (dB)
-Ratio of LFE peak to RMS level.
+| Activity | Content type |
+|---|---|
+| 0–20 % | Minimal LFE (dialogue-heavy) |
+| 20–50 % | Moderate LFE (general cinema) |
+| 50–80 % | Heavy LFE (action) |
+| > 80 % | Constant bass |
 
-**Interpretation:**
-- 8-12 dB: Normal bass content
-- < 8 dB: Heavily compressed bass
-- > 15 dB: Very dynamic (explosions, impacts)
+---
 
-### LFE Activity (%)
-Percentage of time the LFE channel is above -50 dBFS.
+## Channel RMS relative to Center
 
-**Interpretation:**
-- 0-20%: Minimal LFE (dialogue-heavy content)
-- 20-50%: Moderate LFE (general cinema mix)
-- 50-80%: Heavy LFE (action, effects-heavy)
-- > 80%: Constant bass (rarely seen)
+Surround channels are high-pass filtered at **80 Hz** (Butterworth order 4, zero-phase) before measurement to remove low-frequency content that would skew the level comparison. The LFE channel uses the existing **120 Hz low-pass** filter.
 
-### Example Output with LFE Analysis
+Surround channels reported per layout:
 
-```
-File         : film_5.1.wav
-Sample rate  : 48000 Hz
-Channels     : 6
-Duration     : 120.5 s
+| Layout | Channels reported |
+|---|---|
+| 5.1 | Ls (4), Rs (5) |
+| 6.1 | Ls (4), Rs (5), Rc (6) |
+| 7.1 | Ls (4), Rs (5), Lrs (6), Rrs (7) |
 
-Surround ch  : [5, 6] (weighted +1.5 dB)
-Excluded ch  : [4] (LFE, not part of loudness sum)
-
-=== Dynamic Range / Loudness ===
-  Integrated loudness :   -23.45 LUFS
-  Loudness range (LRA):    11.20 LU
-  True peak           :    -3.50 dBTP
-  DR score            :       12
-  RMS level           :   -30.15 dBFS
-
-=== LFE Channel Analysis ===
-  LFE loudness        :   -31.20 LUFS
-  LFE-to-main ratio   :    -7.75 dB
-  LFE peak            :    -1.50 dBTP
-  LFE RMS level       :   -32.80 dBFS
-  LFE crest factor    :    12.35 dB
-  LFE activity        :    65.50 %
-```
+---
 
 ## Dependencies
 
 | Package | Purpose |
 |---------|---------|
-| `numpy` | Numerical computations, array operations |
-| `scipy` | Signal processing (filters, resampling) |
+| `numpy` | Numerical computations |
+| `scipy` | Filters, resampling, Welch PSD, PCHIP interpolation |
 | `soundfile` | Audio file reading |
-| `matplotlib` | Optional: plot rendering |
+| `matplotlib` | Plot rendering (optional) |
+
+---
 
 ## Supported Formats
 
-The script supports all formats supported by `soundfile`:
-- WAV
-- FLAC
-- OGG
-- AIFF
-- and more
+All formats supported by `libsndfile` / `soundfile`:
 
-Typically works with 16-bit or 24-bit PCM.
+- WAV (16-bit, 24-bit, 32-bit float)
+- FLAC
+- AIFF
+- OGG
+- CAF, and more
+
+---
 
 ## Troubleshooting
 
-### "ModuleNotFoundError: No module named 'soundfile'"
+### `ModuleNotFoundError: No module named 'soundfile'`
 
-Install the required packages:
 ```bash
 pip install numpy scipy soundfile
 ```
 
-### "Not enough audio to plot a short-term loudness curve"
+### `Not enough audio to plot a short-term loudness curve`
 
-The audio file is too short (less than ~4 seconds). The script needs sufficient audio for meaningful short-term blocks.
+The file is too short (< ~4 s). The script needs enough blocks for meaningful short-term loudness analysis.
 
-### True Peak exceeds -1 dBTP Warning
+### True Peak warning (> −1 dBTP)
 
-The audio file exceeds the safe headroom level. Reduce the volume to avoid clipping/distortion.
+The file exceeds the safe headroom level. Lower the gain to avoid inter-sample clipping on downstream conversion.
 
-### Low LRA (< 5 LU) Info
+### Low LRA (< 5 LU) info
 
-The file is heavily compressed. This is normal for certain content but may be undesirable for dynamic material.
+The file is heavily compressed. Normal for some content; check if intentional for dynamic material.
 
-## Examples
-
-### Analyze a 5.1 film mix with auto-generated plot
-
-```bash
-python AnalyzeDynamicRange.py film_final.wav --layout 5.1 --plot
-```
-
-This will create `film_final.png` automatically.
-
-### Analyze with custom plot filename
-
-```bash
-python AnalyzeDynamicRange.py film_final.wav --plot loudness_curve.png
-```
-
-### Front-channel only analysis
-
-```bash
-python AnalyzeDynamicRange.py film_final.wav --exclude-surround
-```
-
-### Detailed per-channel analysis
-
-```bash
-python AnalyzeDynamicRange.py film_final.wav --per-channel
-```
-
-## Limitations
-
-- Analysis assumes standard channel arrangement (SMPTE/ITU order)
-- For non-standard layouts, use `--layout` and `--lfe-channel`
-- True peak measurement uses bilinear interpolation upsampler
-- Extremely short files (< 100 ms) may produce invalid results
+---
 
 ## Standards and References
 
-- **ITU-R BS.1770-4**: "Algorithms to measure audio programme loudness and true-peak audio level"
-- **EBU R128**: "Loudness normalisation and permitted maximum level"
-- **EBU Tech 3342**: "Loudness Range: A measure to supplement loudness normalisation in accordance with EBU R128"
-- **ATSC A/85**: "Techniques for Establishing and Maintaining Audio Loudness for Digital Television (DTV)"
+- **ITU-R BS.1770-4**: Algorithms to measure audio programme loudness and true-peak audio level
+- **EBU R128**: Loudness normalisation and permitted maximum level
+- **EBU Tech 3342**: Loudness Range — a measure to supplement loudness normalisation
+- **ATSC A/85**: Techniques for establishing and maintaining audio loudness for DTV
+
+---
 
 ## License
 
 See project license for details.
-
-## Authors/Contact
-
-For questions or issues with this script, please consult the project documentation.
