@@ -311,7 +311,7 @@ _FREQ_RESPONSE_F_MIN = 2.0
 _FREQ_RESPONSE_F_MAX = 200.0
 
 
-def _frequency_response(audio_data, sr, fraction=24,
+def _frequency_response(audio_data, sr, fraction=12,
                         f_min=_FREQ_RESPONSE_F_MIN,
                         f_max=_FREQ_RESPONSE_F_MAX):
     """Calculate the fractional-octave-smoothed frequency response in dB.
@@ -325,7 +325,7 @@ def _frequency_response(audio_data, sr, fraction=24,
     Parameters
         audio_data  Audio signal (1D float array).
         sr          Original sample rate in Hz.
-        fraction    Octave fraction for smoothing (24 = 1/24 octave).
+        fraction    Octave fraction for smoothing (12 = 1/12 octave).
         f_min       Lowest band centre frequency in Hz.
         f_max       Highest band centre frequency in Hz.
 
@@ -717,7 +717,7 @@ def _plot(result, out_path):
     ax3.set_xlabel("Frequency (Hz)")
     ax3.set_ylabel("Magnitude (dB, normalized)")
     ax3.set_title("Frequency Response: Center vs LFE  "
-                  f"(1/24 oct, downsampled to {_FREQ_RESPONSE_TARGET_SR} Hz)")
+                  f"(1/12 oct, downsampled to {_FREQ_RESPONSE_TARGET_SR} Hz)")
     ax3.grid(True, alpha=0.3, which='both')
     ax3.legend(loc="lower left", fontsize=9)
 
