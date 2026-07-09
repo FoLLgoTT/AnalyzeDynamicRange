@@ -797,11 +797,14 @@ def _plot(result, out_path):
     #          row 1 – histogram (left) | metrics panel (right)
     #          row 2 – frequency response (full width)
     fig = plt.figure(figsize=(14, 16), constrained_layout=True)
-    gs = GridSpec(3, 2, figure=fig, height_ratios=[1.1, 1.2, 1.4])
-    ax1 = fig.add_subplot(gs[0, :])
-    ax2 = fig.add_subplot(gs[1, 0])
-    ax4 = fig.add_subplot(gs[1, 1])
-    ax3 = fig.add_subplot(gs[2, :])
+    gs = GridSpec(4, 2, figure=fig,
+                  height_ratios=[1.1, 0.75, 0.75, 1.4],
+                  width_ratios=[1.7, 1])
+    ax1 = fig.add_subplot(gs[0, :])       # loudness over time  – full width
+    ax2 = fig.add_subplot(gs[1:3, 0])     # histogram           – left, 2 rows tall
+    ax4_lfe = fig.add_subplot(gs[1, 1])   # LFE metrics         – top right
+    ax4_rel = fig.add_subplot(gs[2, 1])   # channel RMS         – bottom right
+    ax3 = fig.add_subplot(gs[3, :])
 
     # ===== Subplot 1: Loudness over time =====
     ax1.plot(t, short_term, lw=0.8, color="#1f77b4", label="Short-term loudness")
@@ -892,29 +895,34 @@ def _plot(result, out_path):
     ax3.grid(True, alpha=0.3, which='both')
     ax3.legend(loc="lower left", fontsize=9)
 
-    # ===== Metrics panel (ax4): LFE analysis + channel RMS rel. Center =====
-    ax4.axis('off')
-
+    # ===== Metrics panels: LFE (top right) + channel RMS (bottom right) =====
     def _fv(val, fmt):
         """Format val or return 'N/A' when NaN."""
         return "N/A" if (isinstance(val, float) and np.isnan(val)) \
             else fmt % val
 
-    # --- LFE block ---
+    # --- LFE panel ---
     lfe_loudness = result["lfe_loudness"]
     lfe_ratio = lfe_loudness - result["integrated_lufs"]
     lfe_lines = [
         "LFE Channel Analysis",
         f"  Filter       LP @ {_LFE_LOWPASS_HZ:.0f} Hz, ord {_LFE_LOWPASS_ORDER}",
-        f"  Loudness     {_fv(lfe_loudness,    '%7.2f')} LUFS",
-        f"  LFE/Main     {_fv(lfe_ratio,       '%+7.2f')} dB",
-        f"  True peak    {_fv(result['lfe_peak_dbtp'],      '%7.2f')} dBTP",
-        f"  RMS          {_fv(result['lfe_rms_dbfs'],       '%7.2f')} dBFS",
-        f"  Crest        {_fv(result['lfe_crest_factor'],   '%7.2f')} dB",
-        f"  Activity     {_fv(result['lfe_activity_percent'],'%7.2f')} %",
+        f"  Loudness     {_fv(lfe_loudness,                  '%7.2f')} LUFS",
+        f"  LFE/Main     {_fv(lfe_ratio,                     '%+7.2f')} dB",
+        f"  True peak    {_fv(result['lfe_peak_dbtp'],        '%7.2f')} dBTP",
+        f"  RMS          {_fv(result['lfe_rms_dbfs'],         '%7.2f')} dBFS",
+        f"  Crest        {_fv(result['lfe_crest_factor'],     '%7.2f')} dB",
+        f"  Activity     {_fv(result['lfe_activity_percent'], '%7.2f')} %",
     ]
 
-    # --- Channel RMS block ---
+    ax4_lfe.axis('off')
+    ax4_lfe.text(0.03, 0.97, "\n".join(lfe_lines),
+                 transform=ax4_lfe.transAxes, fontsize=8.5,
+                 fontfamily="monospace", va="top", ha="left",
+                 bbox=dict(boxstyle="round,pad=0.5", facecolor="#ddeeff",
+                           edgecolor="#3366aa", alpha=0.85))
+
+    # --- Channel RMS panel ---
     surround_results = result["surround_rms"]
     center_dbfs = result["center_rms_dbfs"]
     rel_lines = ["Channel RMS relative to Center"]
@@ -925,18 +933,12 @@ def _plot(result, out_path):
             rel_lines.append(
                 f"  {label:<12}  {rms_dbfs:7.2f} dBFS  {rel_db:+.2f} dB")
 
-    _BOX_LFE = dict(boxstyle="round,pad=0.5", facecolor="#ddeeff",
-                    edgecolor="#3366aa", alpha=0.85)
-    _BOX_REL = dict(boxstyle="round,pad=0.5", facecolor="#ddf0dd",
-                    edgecolor="#2d7a2d", alpha=0.85)
-
-    ax4.text(0.03, 0.97, "\n".join(lfe_lines),
-             transform=ax4.transAxes, fontsize=8.5,
-             fontfamily="monospace", va="top", ha="left", bbox=_BOX_LFE)
-    ax4.text(0.53, 0.97, "\n".join(rel_lines),
-             transform=ax4.transAxes, fontsize=8.5,
-             fontfamily="monospace", va="top", ha="left", bbox=_BOX_REL)
-    ax4.set_title("Channel Metrics", fontsize=10)
+    ax4_rel.axis('off')
+    ax4_rel.text(0.03, 0.97, "\n".join(rel_lines),
+                 transform=ax4_rel.transAxes, fontsize=8.5,
+                 fontfamily="monospace", va="top", ha="left",
+                 bbox=dict(boxstyle="round,pad=0.5", facecolor="#ddf0dd",
+                           edgecolor="#2d7a2d", alpha=0.85))
 
     fig.savefig(out_path, dpi=120)
     print(f"\n  [PLOT] {out_path}")
