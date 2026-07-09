@@ -11,7 +11,6 @@ so no extra packages beyond numpy/scipy/soundfile are required):
                                           range metric for film
     - True Peak (dBTP)                    4x oversampled inter-sample peak
     - Momentary / Short-term loudness    time-series (400 ms / 3 s windows)
-    - DR score                            peak-to-RMS based crest metric
 
 Channel handling
     By default a standard channel order is assumed for the loudness sum:
@@ -268,42 +267,6 @@ def _loudness_range(short_term_loudness):
         return float("nan")
 
     return float(np.percentile(gated, 95) - np.percentile(gated, 10))
-
-
-def _dr_score(data, sr, block_s=3.0, top_fraction=0.2):
-    """TT Dynamic Range style DR score (crest factor of the loudest blocks).
-
-    A higher value means more dynamic range; heavily compressed material
-    yields low values (DR <= 6).
-
-    Parameters
-        data          Mono or multi-channel float array.
-        sr            Sample rate in Hz.
-        block_s       Block length in seconds.
-        top_fraction  Fraction of the loudest blocks (by RMS) to evaluate.
-
-    Returns
-        The DR score, rounded to the nearest integer.
-    """
-    mono = data.mean(axis=1) if data.ndim > 1 else data
-    block_len = max(int(round(block_s * sr)), 1)
-    n_blocks = len(mono) // block_len
-    if n_blocks == 0:
-        return float("nan")
-
-    blocks = mono[:n_blocks * block_len].reshape(n_blocks, block_len)
-    rms = np.sqrt(np.mean(blocks * blocks, axis=1))
-    peak = np.max(np.abs(blocks), axis=1)
-
-    n_top = max(1, int(round(n_blocks * top_fraction)))
-    top_idx = np.argsort(rms)[-n_top:]
-
-    rms_top = np.sqrt(np.mean(rms[top_idx] ** 2))
-    peak_top = np.mean(peak[top_idx])
-    if rms_top < _EPS:
-        return float("nan")
-
-    return round(20.0 * np.log10(peak_top / rms_top))
 
 
 def _rms_dbfs(data):
@@ -784,14 +747,12 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     del weighted
     gc.collect()
 
-    dr = _dr_score(data_ds, sr_ds)
     rms = _rms_dbfs(data_ds)
-    _tick("DR score + RMS")
+    _tick("RMS")
 
     print("=== Dynamic Range / Loudness ===")
     print(f"  Integrated loudness : {integrated:8.1f} LUFS")
     print(f"  Loudness range (LRA): {lra:8.1f} LU")
-    print(f"  DR score            : {dr:8.0f}")
     print(f"  RMS level           : {rms:8.1f} dBFS")
     if momentary.size:
         print(f"  Momentary max       : {np.max(momentary):8.1f} LUFS")
@@ -907,7 +868,6 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         "n_channels": n_ch,
         "integrated_lufs": integrated,
         "lra_lu": lra,
-        "dr_score": dr,
         "rms_dbfs": rms,
         "short_term": short_term,
         "momentary": momentary,

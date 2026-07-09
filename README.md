@@ -19,7 +19,6 @@ These standards are internationally recognized and used in the film industry, st
 |--------|------|-------------|
 | **Integrated Loudness** | LUFS | Gated programme loudness across the entire file |
 | **Loudness Range (LRA)** | LU | Dynamic range per EBU Tech 3342 |
-| **DR Score** | integer | Crest-factor-based dynamic range metric |
 | **RMS Level** | dBFS | Overall RMS across all channels |
 | **Momentary Loudness** | LUFS | Time series over 400 ms windows |
 | **Short-term Loudness** | LUFS | Time series over 3-second windows |
@@ -111,7 +110,6 @@ Surround ch  : [5, 6] (weighted +1.5 dB)
 === Dynamic Range / Loudness ===
   Integrated loudness :   -23.45 LUFS
   Loudness range (LRA):    11.20 LU
-  DR score            :       12
   RMS level           :   -30.15 dBFS
   Momentary max       :   -18.30 LUFS
   Short-term max      :   -20.10 LUFS
@@ -328,15 +326,6 @@ The LRA is the difference between the **95th and 10th percentile** of the remain
 | 10–20 LU | Dynamic — typical target for theatrical film mixes |
 | > 20 LU | Very dynamic — orchestral, documentary, dialogue-heavy drama |
 
-### DR Score
-
-| Score | Interpretation |
-|---|---|
-| ≤ 6 | Heavily compressed |
-| 7–10 | Modern pop/rock |
-| 11–15 | Dynamic content |
-| > 15 | Very dynamic (orchestral) |
-
 ### DC Offset (dBFS per channel)
 
 The arithmetic mean of all samples in a channel. Non-zero DC causes audible clicks at edit points and can saturate output stages.
@@ -414,7 +403,7 @@ All formats supported by `libsndfile` / `soundfile`:
 
 The script loads the entire file into RAM at the original sample rate. The following optimisations keep peak RAM well below the raw-file size:
 
-1. The entire audio is **downsampled to 16 kHz** immediately after reading. All metrics (K-weighted loudness, LRA, DR score, RMS, LFE loudness/crest/activity, surround RMS, DC offset) are computed from this compact representation. The downsampled copy is ~3× smaller for a 48 kHz source.
+1. The entire audio is **downsampled to 16 kHz** immediately after reading. All metrics (K-weighted loudness, LRA, RMS, LFE loudness/crest/activity, surround RMS, DC offset) are computed from this compact representation. The downsampled copy is ~3× smaller for a 48 kHz source.
 2. The **original full-resolution array is immediately freed** after the downsampling step.
 3. The **frequency-response plot** uses 16 kHz, so no large array is retained after analysis.
 
