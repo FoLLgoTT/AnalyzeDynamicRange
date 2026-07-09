@@ -222,7 +222,7 @@ Text box showing the RMS level of each channel relative to the unfiltered Center
 
 ## Channel Layouts
 
-Channel order according to Microsoft wave format (see [here](https://sourceforge.net/p/mesh2hrtf-tools/wiki/Confusion_of_7-1%20and%205-1_channel_order_in_Windows/)):
+Channel order according to Microsoft wave format (see [here](https://learn.microsoft.com/en-us/windows-hardware/drivers/audio/channel-mask)):
 
 | Layout | Channels |
 |--------|----------|
