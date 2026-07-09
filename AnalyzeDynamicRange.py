@@ -457,27 +457,20 @@ def _lfe_lowpass(data_lfe, sr):
     A zero-phase (forward-backward) filter is used so that no phase distortion
     is introduced, which keeps time-domain peak measurements accurate.
 
-    The input is cast to float64 before filtering.  scipy's sosfilt operates
-    in the dtype of the input signal; float32 IIR states decay into the
-    subnormal range after as little as ~115 ms of LFE silence (pole magnitude
-    ≈ 0.954 per sample at 16 kHz), which causes 50–150× slower arithmetic on
-    x86 CPUs.  float64 subnormals are unreachable at audio amplitudes
-    (threshold ≈ 2.2 × 10⁻³⁰⁸).
-
     Parameters
         data_lfe  LFE channel data (1D float array).
         sr        Sample rate in Hz.
 
     Returns
-        Filtered copy of data_lfe as float64.
+        Filtered copy of data_lfe.
     """
     nyquist = sr / 2.0
     if _LFE_LOWPASS_HZ >= nyquist:
-        return data_lfe.astype(np.float64)
+        return data_lfe
 
     sos = butter(_LFE_LOWPASS_ORDER, _LFE_LOWPASS_HZ / nyquist,
                  btype='low', output='sos')
-    return sosfiltfilt(sos, data_lfe.astype(np.float64))
+    return sosfiltfilt(sos, data_lfe)
 
 
 def _lfe_loudness(data_lfe, sr):
