@@ -1023,7 +1023,7 @@ def _plot(result, out_path):
     #          row 2 – frequency response (full width)
     fig = plt.figure(figsize=(12, 16.97), constrained_layout=True)
     gs = GridSpec(5, 2, figure=fig,
-                  height_ratios=[1.3, 0.5, 0.75, 0.35, 2.0],
+                  height_ratios=[1.3, 0.33, 0.33, 0.33, 2.0],
                   width_ratios=[4.5, 1])
     ax1 = fig.add_subplot(gs[0, :])       # loudness over time  – full width
     ax2 = fig.add_subplot(gs[1:4, 0])     # histogram           – left, 3 rows tall
