@@ -949,7 +949,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
                     if not np.isnan(ba["sub_bass_ratio_db"]) else "n/a")
         print(f"\n  Summary:")
         print(f"    LFE activity   : {_lfe_activity_label(ba['global_activity_pct'])}")
-        print(f"    Bass character : {bass_lbl}")
+        print(f"    LFE depth      : {bass_lbl}")
 
     # Surround channel RMS relative to center (at _LOUDNESS_SR).
     # Pass the already filtered LFE signal to avoid a redundant low-pass pass.
@@ -1192,9 +1192,9 @@ def _plot(result, out_path):
                 else "n/a")
     sum_lines = [
         "Summary",
-        f'  Loudness range : {lra_lbl}',
-        f'  LFE activity   : {act_lbl}',
-        f'  Bass character : {bass_lbl}',
+        f'  Loudness range: {lra_lbl}',
+        f'  LFE activity  : {act_lbl}',
+        f'  LFE depth     : {bass_lbl}',
     ]
     ax4_sum.axis('off')
     ax4_sum.text(0.03, 0.97, "\n".join(sum_lines),

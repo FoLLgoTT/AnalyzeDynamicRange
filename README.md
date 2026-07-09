@@ -232,7 +232,7 @@ Text box with a concise qualitative assessment derived from the numeric results:
 |---|---|---|
 | **Loudness range** | LRA (LU) | `heavily compressed` · `compressed` · `moderate` · `dynamic` · `high dynamic` · `extreme dynamic` |
 | **LFE activity** | LFE active (% of runtime) | `restrained` · `moderate` · `active` · `very active` · `overused` |
-| **Bass characteristics** | Sub-bass ratio (dB) | `upper-bass` · `moderate` · `deep` · `seismic` |
+| **LFE depth** | Sub-bass ratio (dB) | `upper-bass` · `moderate` · `deep` · `seismic` |
 
 The thresholds for each label are documented in the sections below.
 
