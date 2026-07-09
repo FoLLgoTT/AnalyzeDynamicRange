@@ -660,17 +660,17 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     rms = _rms_dbfs(data)
 
     print("=== Dynamic Range / Loudness ===")
-    print(f"  Integrated loudness : {integrated:8.2f} LUFS")
-    print(f"  Loudness range (LRA): {lra:8.2f} LU")
-    print(f"  True peak           : {true_peak:8.2f} dBTP")
+    print(f"  Integrated loudness : {integrated:8.1f} LUFS")
+    print(f"  Loudness range (LRA): {lra:8.1f} LU")
+    print(f"  True peak           : {true_peak:8.1f} dBTP")
     print(f"  DR score            : {dr:8.0f}")
-    print(f"  RMS level           : {rms:8.2f} dBFS")
+    print(f"  RMS level           : {rms:8.1f} dBFS")
     if momentary.size:
-        print(f"  Momentary max       : {np.max(momentary):8.2f} LUFS")
+        print(f"  Momentary max       : {np.max(momentary):8.1f} LUFS")
     if short_term.size:
-        print(f"  Short-term max      : {np.max(short_term):8.2f} LUFS")
+        print(f"  Short-term max      : {np.max(short_term):8.1f} LUFS")
         print(f"  Short-term min      : "
-              f"{np.min(short_term[short_term > _ABS_GATE_LUFS]):8.2f} LUFS")
+              f"{np.min(short_term[short_term > _ABS_GATE_LUFS]):8.1f} LUFS")
     print()
 
     if true_peak > -1.0:
@@ -692,8 +692,8 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
             elif abs(base_weights[ch] - 1.41) < 1e-6:
                 tag = " (surround, excluded from sum)" if exclude_surround \
                     else " (surround)"
-            print(f"  Channel {ch + 1:2d}: {ch_int:8.2f} LUFS  "
-                  f"true peak {tp_per_ch[ch]:7.2f} dBTP{tag}")
+            print(f"  Channel {ch + 1:2d}: {ch_int:8.1f} LUFS  "
+                  f"true peak {tp_per_ch[ch]:7.1f} dBTP{tag}")
 
     # LFE analysis if LFE channel is identified
     lfe_loudness = float("nan")
@@ -719,14 +719,14 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         print("\n=== LFE Channel Analysis ===")
         print(f"  Low-pass filter     : {_LFE_LOWPASS_HZ:.0f} Hz "
               f"(Butterworth order {_LFE_LOWPASS_ORDER}, zero-phase)")
-        print(f"  LFE loudness        : {lfe_loudness:8.2f} LUFS")
+        print(f"  LFE loudness        : {lfe_loudness:8.1f} LUFS")
         if not np.isnan(integrated) and not np.isnan(lfe_loudness):
             lfe_ratio = lfe_loudness - integrated
-            print(f"  LFE-to-main ratio   : {lfe_ratio:8.2f} dB")
-        print(f"  LFE peak            : {lfe_peak:8.2f} dBTP")
-        print(f"  LFE RMS level       : {lfe_rms:8.2f} dBFS")
-        print(f"  LFE crest factor    : {lfe_crest:8.2f} dB")
-        print(f"  LFE activity        : {lfe_activity:8.2f} %")
+            print(f"  LFE-to-main ratio   : {lfe_ratio:8.1f} dB")
+        print(f"  LFE peak            : {lfe_peak:8.1f} dBTP")
+        print(f"  LFE RMS level       : {lfe_rms:8.1f} dBFS")
+        print(f"  LFE crest factor    : {lfe_crest:8.1f} dB")
+        print(f"  LFE activity        : {lfe_activity:8.1f} %")
 
         if lfe_peak > -1.0:
             print(f"  [WARN] LFE peak exceeds -1 dBTP - risk of clipping.")
@@ -749,9 +749,9 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
               f"(Butterworth order {_LFE_LOWPASS_ORDER}, zero-phase)")
         print(f"  High-pass (surround): {_SURROUND_HIGHPASS_HZ:.0f} Hz "
               f"(Butterworth order {_SURROUND_HIGHPASS_ORDER}, zero-phase)")
-        print(f"  C    (Ch 3)         : {center_dbfs:8.2f} dBFS  (reference, unfiltered)")
+        print(f"  C    (Ch 3)         : {center_dbfs:8.1f} dBFS  (reference, unfiltered)")
         for label, rms_dbfs, rel_db in surround_results:
-            print(f"  {label}     : {rms_dbfs:8.2f} dBFS  {rel_db:+.2f} dB rel. C")
+            print(f"  {label}     : {rms_dbfs:8.1f} dBFS  {rel_db:+.1f} dB rel. C")
 
     return {
         "sr": sr,
@@ -908,12 +908,12 @@ def _plot(result, out_path):
     lfe_lines = [
         "LFE Channel Analysis",
         f"  Filter       LP @ {_LFE_LOWPASS_HZ:.0f} Hz, ord {_LFE_LOWPASS_ORDER}",
-        f"  Loudness     {_fv(lfe_loudness,                  '%7.2f')} LUFS",
-        f"  LFE/Main     {_fv(lfe_ratio,                     '%+7.2f')} dB",
-        f"  True peak    {_fv(result['lfe_peak_dbtp'],        '%7.2f')} dBTP",
-        f"  RMS          {_fv(result['lfe_rms_dbfs'],         '%7.2f')} dBFS",
-        f"  Crest        {_fv(result['lfe_crest_factor'],     '%7.2f')} dB",
-        f"  Activity     {_fv(result['lfe_activity_percent'], '%7.2f')} %",
+        f"  Loudness     {_fv(lfe_loudness,                  '%7.1f')} LUFS",
+        f"  LFE/Main     {_fv(lfe_ratio,                     '%+7.1f')} dB",
+        f"  True peak    {_fv(result['lfe_peak_dbtp'],        '%7.1f')} dBTP",
+        f"  RMS          {_fv(result['lfe_rms_dbfs'],         '%7.1f')} dBFS",
+        f"  Crest        {_fv(result['lfe_crest_factor'],     '%7.1f')} dB",
+        f"  Activity     {_fv(result['lfe_activity_percent'], '%7.1f')} %",
     ]
 
     ax4_lfe.axis('off')
@@ -930,7 +930,7 @@ def _plot(result, out_path):
     if not (isinstance(center_dbfs, float) and np.isnan(center_dbfs)):
         rel_lines.append(f"  {'C  (Ch 3)':<12}  [ref]")
         for label, _rms_dbfs, rel_db in surround_results:
-            rel_lines.append(f"  {label:<12}  {rel_db:+.2f} dB")
+            rel_lines.append(f"  {label:<12}  {rel_db:+.1f} dB")
 
     ax4_rel.axis('off')
     ax4_rel.text(0.03, 0.97, "\n".join(rel_lines),
