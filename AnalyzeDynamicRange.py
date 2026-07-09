@@ -426,6 +426,20 @@ def _lfe_lowpass(data_lfe, sr):
 
 
 
+def _lra_label(lra):
+    if lra > 35:
+        return "extreme"
+    if lra > 30:
+        return "very high"
+    if lra > 25:
+        return "high"
+    if lra > 20:
+        return "medium"
+    if lra > 15:
+        return "low"
+    return "very low"
+
+
 def _lfe_activity_label(pct):
     if pct > 20:
         return "insane"
@@ -846,7 +860,9 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
 
     print("=== Dynamic Range / Loudness ===")
     print(f"  Integrated loudness : {integrated:8.1f} LUFS")
-    print(f"  Loudness range (LRA): {lra:8.1f} LU")
+    print(f"  Loudness range (LRA): {lra:8.1f} LU"
+          f"  (\"{_lra_label(lra)}\")" if not np.isnan(lra) else
+          f"  Loudness range (LRA): {'n/a':>8}")
     print(f"  RMS level           : {rms:8.1f} dBFS")
     if momentary.size:
         print(f"  Momentary max       : {np.max(momentary):8.1f} LUFS")
@@ -892,8 +908,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         print(f"\n=== LFE Band Analysis (rel. to {ref_str} main mix) ===")
         print(f"  Activity threshold  : {ba['threshold_dBFS']:.1f} dBFS "
               f"(integrated − {_LFE_ACTIVITY_OFFSET_DB:.0f} dB)")
-        print(f"  LFE active (total)  : {ba['global_activity_pct']:.1f} % of runtime"
-              f"  ({_lfe_activity_label(ba['global_activity_pct'])})")
+        print(f"  LFE active (total)  : {ba['global_activity_pct']:.1f} % of runtime")
         print(f"  Band activity below : % of LFE-active windows where band exceeds threshold")
         print()
         hdr = (f"  {'Band':<12}  {'Act. in active':>14}  "
@@ -919,8 +934,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         print()
         if not np.isnan(ba["sub_bass_ratio_db"]):
             r = ba["sub_bass_ratio_db"]
-            print(f"  Sub-bass ratio  (20–40 / 40–120 Hz): {r:+.1f} dB"
-                  f"  [{_sub_bass_ratio_label(r)}]")
+            print(f"  Sub-bass ratio  (20–40 / 40–120 Hz): {r:+.1f} dB")
         if not np.isnan(ba["infra_ratio_db"]):
             r = ba["infra_ratio_db"]
             note = ("[WARN] significant infrasound" if r > -20 else
@@ -930,6 +944,11 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         if not np.isnan(ba["spectral_centroid_hz"]):
             print(f"  Spectral centroid (active windows) : "
                   f"{ba['spectral_centroid_hz']:.0f} Hz")
+        bass_lbl = (_sub_bass_ratio_label(ba["sub_bass_ratio_db"])
+                    if not np.isnan(ba["sub_bass_ratio_db"]) else "n/a")
+        print(f"\n  Summary:")
+        print(f"    LFE activity       : \"{_lfe_activity_label(ba['global_activity_pct'])}\"")
+        print(f"    Bass characteristics: \"{bass_lbl}\"")
 
     # Surround channel RMS relative to center (at _LOUDNESS_SR).
     # Pass the already filtered LFE signal to avoid a redundant low-pass pass.
@@ -1003,14 +1022,15 @@ def _plot(result, out_path):
     #          row 1 – histogram (left) | metrics panel (right)
     #          row 2 – frequency response (full width)
     fig = plt.figure(figsize=(12, 16.97), constrained_layout=True)
-    gs = GridSpec(4, 2, figure=fig,
-                  height_ratios=[1.3, 0.5, 0.75, 2.0],
+    gs = GridSpec(5, 2, figure=fig,
+                  height_ratios=[1.3, 0.5, 0.75, 0.35, 2.0],
                   width_ratios=[4.5, 1])
     ax1 = fig.add_subplot(gs[0, :])       # loudness over time  – full width
     ax2 = fig.add_subplot(gs[1:3, 0])     # histogram           – left, 2 rows tall
-    ax4_rel = fig.add_subplot(gs[1, 1])   # channel RMS         – bottom right
-    ax4_lfe = fig.add_subplot(gs[2, 1])   # LFE metrics         – top right
-    ax3 = fig.add_subplot(gs[3, :])
+    ax4_rel = fig.add_subplot(gs[1, 1])   # channel RMS         – top right
+    ax4_lfe = fig.add_subplot(gs[2, 1])   # LFE metrics         – middle right
+    ax4_sum = fig.add_subplot(gs[3, 1])   # summary             – bottom right
+    ax3 = fig.add_subplot(gs[4, :])
 
     # ===== Subplot 1: Loudness over time =====
     ax1.plot(t, short_term, lw=0.8, color="#1f77b4", label="Short-term loudness")
@@ -1130,8 +1150,7 @@ def _plot(result, out_path):
     lfe_lines = ["LFE Band Analysis"]
     if ba is not None:
         lfe_lines.append(
-            f"  Active {ba['global_activity_pct']:2.1f} % of runtime"
-            f" ({_lfe_activity_label(ba['global_activity_pct'])})")
+            f"  Active {ba['global_activity_pct']:2.1f} % of runtime")
         lfe_lines.append(f"  {'Band':<12} {'Act%':>5} {'P95':>6} {'Peak':>6}")
         for b in ba["bands"]:
             p95s = (f"{b['p95_rel']:+5.1f}" if not np.isnan(b["p95_rel"])
@@ -1143,7 +1162,7 @@ def _plot(result, out_path):
         if not np.isnan(ba["sub_bass_ratio_db"]):
             r = ba["sub_bass_ratio_db"]
             lfe_lines.append(
-                f"  Sub-bass ratio {r:+.1f} dB ({_sub_bass_ratio_label(r)})")
+                f"  Sub-bass ratio {r:+.1f} dB")
         if not np.isnan(ba.get("spectral_centroid_hz", float("nan"))):
             lfe_lines.append(
                 f"  Centroid    {ba['spectral_centroid_hz']:.0f} Hz")
@@ -1156,6 +1175,28 @@ def _plot(result, out_path):
                  fontfamily="monospace", va="top", ha="left",
                  bbox=dict(boxstyle="round,pad=0.5", facecolor="#ddeeff",
                            edgecolor="#3366aa", alpha=0.85))
+
+    # --- Summary panel ---
+    lra = result["lra_lu"]
+    ba  = result.get("lfe_band_analysis")
+    lra_lbl  = _lra_label(lra) if not np.isnan(lra) else "n/a"
+    act_lbl  = (_lfe_activity_label(ba["global_activity_pct"])
+                if ba is not None else "n/a")
+    bass_lbl = (_sub_bass_ratio_label(ba["sub_bass_ratio_db"])
+                if ba is not None and not np.isnan(ba["sub_bass_ratio_db"])
+                else "n/a")
+    sum_lines = [
+        "Summary",
+        f'  Loudness range     : "{lra_lbl}"',
+        f'  LFE activity       : "{act_lbl}"',
+        f'  Bass characteristics: "{bass_lbl}"',
+    ]
+    ax4_sum.axis('off')
+    ax4_sum.text(0.03, 0.97, "\n".join(sum_lines),
+                 transform=ax4_sum.transAxes, fontsize=8.5,
+                 fontfamily="monospace", va="top", ha="left",
+                 bbox=dict(boxstyle="round,pad=0.5", facecolor="#fff8dd",
+                           edgecolor="#aa8800", alpha=0.85))
 
     # --- Channel RMS panel ---
     surround_results = result["surround_rms"]
