@@ -547,6 +547,10 @@ def _lfe_band_analysis(data_lfe, sr, integrated_main):
     global_rms = np.sqrt(_win_ms(data_lfe))
     global_mask = global_rms >= threshold_rms
     n_global_active = int(global_mask.sum())
+    n_windows = len(global_mask)
+
+    # Overall LFE activity as fraction of total runtime.
+    global_activity_pct = 100.0 * n_global_active / n_windows if n_windows > 0 else 0.0
 
     band_results = []
     avg_ms_per_band = []   # mean-square over globally-active windows, per band
@@ -567,10 +571,14 @@ def _lfe_band_analysis(data_lfe, sr, integrated_main):
         band_ms = _win_ms(band_data)
         del band_data
 
-        band_rms_win = np.sqrt(band_ms)
-
-        # Per-band activity: fraction of ALL windows exceeding threshold.
-        act_pct = 100.0 * float(np.sum(band_rms_win >= threshold_rms)) / len(band_rms_win)
+        # Per-band activity: among globally-active windows, how many also
+        # exceed the threshold in this band?  Uses the same window set as
+        # P95 / Peak / energy statistics so all columns are consistent.
+        if n_global_active > 0:
+            band_rms_active = np.sqrt(band_ms[global_mask])
+            act_pct = 100.0 * float(np.sum(band_rms_active >= threshold_rms)) / n_global_active
+        else:
+            act_pct = 0.0
 
         # Level statistics over globally-active windows only.
         if n_global_active > 0:
@@ -615,10 +623,13 @@ def _lfe_band_analysis(data_lfe, sr, integrated_main):
                 if total_e > _EPS else float("nan"))
 
     return {
-        "bands":               band_results,
-        "threshold_dBFS":      threshold_dBFS,
-        "sub_bass_ratio_db":   sub_bass_ratio,
-        "infra_ratio_db":      infra_ratio,
+        "bands":                band_results,
+        "threshold_dBFS":       threshold_dBFS,
+        "global_activity_pct":  global_activity_pct,
+        "n_global_active":      n_global_active,
+        "n_windows":            n_windows,
+        "sub_bass_ratio_db":    sub_bass_ratio,
+        "infra_ratio_db":       infra_ratio,
         "spectral_centroid_hz": centroid,
     }
 
@@ -956,10 +967,14 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         print(f"\n=== LFE Band Analysis (rel. to {ref_str} main mix) ===")
         print(f"  Activity threshold  : {ba['threshold_dBFS']:.1f} dBFS "
               f"(integrated − {_LFE_ACTIVITY_OFFSET_DB:.0f} dB)")
+        print(f"  LFE active (total)  : {ba['global_activity_pct']:.1f} % of runtime"
+              f"  ({ba['n_global_active']} / {ba['n_windows']} windows)")
+        print(f"  Band activity below : % of LFE-active windows where band exceeds threshold")
         print()
-        hdr = f"  {'Band':<12}  {'Activity':>8}  {'P95':>9}  {'Peak':>9}  {'Peak−P95':>9}"
+        hdr = (f"  {'Band':<12}  {'Act. in active':>14}  "
+               f"{'P95':>9}  {'Peak':>9}  {'Peak−P95':>9}")
         print(hdr)
-        print(f"  {'-'*12}  {'-'*8}  {'-'*9}  {'-'*9}  {'-'*9}")
+        print(f"  {'-'*12}  {'-'*14}  {'-'*9}  {'-'*9}  {'-'*9}")
         for b in ba["bands"]:
             act = f"{b['activity_pct']:.1f} %"
             p95 = (f"{b['p95_rel']:+.1f} dB"
@@ -970,11 +985,11 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
                       if not np.isnan(b["spread_db"]) else "  n/a")
             warn = ""
             if (b["label"] == "<20 Hz"
-                    and b["activity_pct"] > 5.0
+                    and b["activity_pct"] > 10.0
                     and not np.isnan(ba["infra_ratio_db"])
                     and ba["infra_ratio_db"] > -20.0):
                 warn = "  [WARN]"
-            print(f"  {b['label']:<12}  {act:>8}  {p95:>9}  {peak:>9}"
+            print(f"  {b['label']:<12}  {act:>14}  {p95:>9}  {peak:>9}"
                   f"  {spread:>9}{warn}")
         print()
         if not np.isnan(ba["sub_bass_ratio_db"]):
