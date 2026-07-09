@@ -306,7 +306,7 @@ def _rms_dbfs(data):
 
 
 _FREQ_RESPONSE_TARGET_SR = 800
-_FREQ_RESPONSE_F_MIN = 1.0
+_FREQ_RESPONSE_F_MIN = 2.0
 _FREQ_RESPONSE_F_MAX = 200.0
 
 
@@ -698,7 +698,7 @@ def _plot(result, out_path):
     ax3.set_xlim(_FREQ_RESPONSE_F_MIN, _FREQ_RESPONSE_F_MAX)
     ax3.set_ylim(-50, 2)
 
-    freq_ticks = [1, 2, 5, 10, 20, 50, 100, 200]
+    freq_ticks = [2, 5, 10, 20, 50, 100, 200]
     ax3.set_xticks(freq_ticks)
     ax3.set_xticklabels([str(f) for f in freq_ticks])
 
