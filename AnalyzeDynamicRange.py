@@ -796,10 +796,8 @@ def _plot(result, out_path):
     # Layout:  row 0 – loudness curve (full width)
     #          row 1 – histogram (left) | metrics panel (right)
     #          row 2 – frequency response (full width)
-    fig = plt.figure(figsize=(14, 18))
-    gs = GridSpec(3, 2, figure=fig,
-                  height_ratios=[1.1, 1.2, 1.4],
-                  hspace=0.38, wspace=0.28)
+    fig = plt.figure(figsize=(14, 16), constrained_layout=True)
+    gs = GridSpec(3, 2, figure=fig, height_ratios=[1.1, 1.2, 1.4])
     ax1 = fig.add_subplot(gs[0, :])
     ax2 = fig.add_subplot(gs[1, 0])
     ax4 = fig.add_subplot(gs[1, 1])
