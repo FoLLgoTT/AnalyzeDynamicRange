@@ -397,7 +397,7 @@ _LFE_BANDS = [
 # windows that exceed this threshold so that long silent passages do not
 # distort the results.
 _LFE_ACTIVITY_OFFSET_DB = 15.0
-_SPIKE_THRESHOLD_LU = 15.0   # short-term windows this many LU above integrated are counted as spikes
+_SPIKE_THRESHOLD_LU = 10.0   # short-term windows this many LU above integrated are counted as spikes
 
 _SURROUND_HIGHPASS_HZ = 80.0
 _SURROUND_HIGHPASS_ORDER = 4
