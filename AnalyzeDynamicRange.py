@@ -1148,16 +1148,29 @@ def _plot(result, out_path):
             else fmt % val
 
     # --- LFE panel ---
-    lfe_loudness = result["lfe_loudness"]
-    lfe_ratio = lfe_loudness - result["integrated_lufs"]
-    lfe_lines = [
-        "LFE Channel Analysis",
-        f"  Filter       LP @ {_LFE_LOWPASS_HZ:.0f} Hz, ord {_LFE_LOWPASS_ORDER}",
-        f"  Loudness     {_fv(lfe_loudness,                  '%7.1f')} LUFS",
-        f"  LFE/Main     {_fv(lfe_ratio,                     '%+7.1f')} dB",
-        f"  RMS          {_fv(result['lfe_rms_dbfs'],         '%7.1f')} dBFS",
-        f"  Crest        {_fv(result['lfe_crest_factor'],     '%7.1f')} dB",
-    ]
+    ba = result.get("lfe_band_analysis")
+    lfe_lines = ["LFE Band Analysis"]
+    if ba is not None:
+        lfe_lines.append(
+            f"  Active       {ba['global_activity_pct']:5.1f} % of runtime")
+        lfe_lines.append(
+            f"  Threshold    {ba['threshold_dBFS']:+5.1f} dBFS")
+        lfe_lines.append(f"  {'Band':<12} {'Act%':>5} {'P95':>6} {'Peak':>6}")
+        for b in ba["bands"]:
+            p95s = (f"{b['p95_rel']:+5.1f}" if not np.isnan(b["p95_rel"])
+                    else "  n/a")
+            pks = (f"{b['peak_rel']:+5.1f}" if not np.isnan(b["peak_rel"])
+                   else "  n/a")
+            lfe_lines.append(
+                f"  {b['label']:<12} {b['activity_pct']:5.1f} {p95s} {pks}")
+        if not np.isnan(ba["sub_bass_ratio_db"]):
+            lfe_lines.append(
+                f"  Sub-bass ratio {ba['sub_bass_ratio_db']:+.1f} dB")
+        if not np.isnan(ba.get("spectral_centroid_hz", float("nan"))):
+            lfe_lines.append(
+                f"  Centroid    {ba['spectral_centroid_hz']:.0f} Hz")
+    else:
+        lfe_lines.append("  No LFE channel detected")
 
     ax4_lfe.axis('off')
     ax4_lfe.text(0.03, 0.97, "\n".join(lfe_lines),
