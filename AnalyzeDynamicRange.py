@@ -38,6 +38,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import gc
 import glob
 import math
 import os
@@ -56,6 +57,15 @@ _EPS = 1e-12
 _ABS_GATE_LUFS = -70.0      # absolute gate
 _REL_GATE_LU = 10.0         # relative gate below ungated mean (integrated)
 _LRA_REL_GATE_LU = 20.0     # relative gate for LRA (EBU Tech 3342)
+
+# Downsampling for loudness analysis.
+# K-weighting filters top out at ~1.7 kHz; 16 kHz offers a generous safety
+# margin while reducing the working-set by 3× at a typical 48 kHz source.
+_LOUDNESS_SR = 16000
+
+# How many seconds of centred audio are kept for the frequency-response plot.
+# 300 s gives ample frequency resolution at 800 Hz analysis rate.
+_FREQ_EXCERPT_DURATION_S = 300.0
 
 
 def _biquad_kweighting(sr):
@@ -248,19 +258,26 @@ def _loudness_range(short_term_loudness):
 
 
 def _true_peak_dbtp(data, sr):
-    """Estimate the true peak (dBTP) via 4x oversampling per channel.
+    """Estimate the true peak (dBTP) via 4x oversampling, one channel at a time.
+
+    Processing each channel individually avoids creating an n_channels × 4
+    oversampled copy of the entire file simultaneously, which would dominate
+    peak memory for multi-channel, long-duration audio.
 
     Returns
         (overall_dbtp, per_channel_dbtp) where per_channel_dbtp is a list.
     """
     # 4x oversampling is the BS.1770 Annex 2 recommendation up to 96 kHz.
     factor = 4 if sr <= 96000 else 2
-    oversampled = resample_poly(data, factor, 1, axis=0)
-    if oversampled.ndim == 1:
-        oversampled = oversampled[:, np.newaxis]
+    data_2d = data if data.ndim > 1 else data[:, np.newaxis]
+    n_ch = data_2d.shape[1]
 
-    peaks = np.max(np.abs(oversampled), axis=0)
-    per_channel = [20.0 * np.log10(max(float(p), _EPS)) for p in peaks]
+    per_channel = []
+    for ch in range(n_ch):
+        oversampled_ch = resample_poly(data_2d[:, ch], factor, 1)
+        peak = float(np.max(np.abs(oversampled_ch)))
+        per_channel.append(20.0 * np.log10(max(peak, _EPS)))
+
     overall = max(per_channel)
     return overall, per_channel
 
@@ -305,6 +322,29 @@ def _rms_dbfs(data):
     """Overall RMS level in dBFS across all channels."""
     rms = np.sqrt(np.mean(np.square(data)))
     return 20.0 * np.log10(max(float(rms), _EPS))
+
+
+def _downsample(data, sr, target_sr):
+    """Downsample *data* to *target_sr* with anti-aliasing via resample_poly.
+
+    Uses the GCD of the two rates to keep the up/down integer ratio as small
+    as possible, which keeps the FIR filter short and fast.
+
+    Parameters
+        data       Audio array of shape (n_samples, n_channels) or 1D.
+        sr         Original sample rate in Hz (int).
+        target_sr  Target sample rate in Hz (int).
+
+    Returns
+        Tuple (resampled_data, target_sr).  Returns (data, sr) unchanged when
+        sr is already at or below target_sr.
+    """
+    if sr <= target_sr:
+        return data, sr
+    g = math.gcd(int(sr), int(target_sr))
+    up = target_sr // g
+    down = sr // g
+    return resample_poly(data, up, down, axis=0).astype(data.dtype), target_sr
 
 
 # DC offset above this linear threshold triggers a [WARN].
@@ -631,6 +671,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     """
     data, sr = sf.read(path, dtype="float32", always_2d=True)
     n_ch = data.shape[1]
+    duration_s = len(data) / sr
 
     # Resolve effective layout once so it can be reused throughout.
     if layout is not None:
@@ -647,7 +688,11 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     print(f"File         : {path}")
     print(f"Sample rate  : {sr} Hz")
     print(f"Channels     : {n_ch}")
-    print(f"Duration     : {len(data) / sr:.1f} s\n")
+    print(f"Duration     : {duration_s:.1f} s")
+    if sr > _LOUDNESS_SR:
+        print(f"Loudness SR  : {_LOUDNESS_SR} Hz  "
+              f"(downsampled from {sr} Hz for loudness / RMS / LFE analysis)")
+    print()
 
     # Reference weights (surrounds at +1.5 dB) identify the channel roles
     # independently of whether the surrounds are excluded from this analysis.
@@ -668,23 +713,77 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
             print(f"Surround ch  : {surround_ch} (weighted +1.5 dB)")
     print()
 
-    weighted = _k_weight(data, sr)
+    # Resolve LFE channel index (0-based) early so it can be used before and
+    # after the downsampling step.
+    lfe_idx = None
+    if lfe_ch:
+        lfe_idx = lfe_ch[0] - 1   # convert 1-based to 0-based
+    elif lfe_channel is not None and 0 <= lfe_channel < n_ch:
+        lfe_idx = lfe_channel
+
+    # -----------------------------------------------------------------------
+    # Metrics that require the original sample rate
+    # -----------------------------------------------------------------------
+
+    # True Peak: 4x oversampling per BS.1770 Annex 2.  Channel-by-channel so
+    # that only one oversampled channel (not all channels) is in RAM at once.
+    true_peak, tp_per_ch = _true_peak_dbtp(data, sr)
+
+    # LFE True Peak: computed from the full-SR filtered LFE channel before the
+    # main array is downsampled and freed.
+    lfe_peak = float("nan")
+    if lfe_idx is not None:
+        _lfe_fullsr = _lfe_lowpass(data[:, lfe_idx], sr)
+        lfe_peak = _lfe_true_peak_dbtp(_lfe_fullsr, sr)
+        del _lfe_fullsr
+
+    # -----------------------------------------------------------------------
+    # Downsample to _LOUDNESS_SR and release the full-resolution array.
+    # All remaining metrics are computed from the compact representation.
+    # -----------------------------------------------------------------------
+    data_ds, sr_ds = _downsample(data, sr, _LOUDNESS_SR)
+    del data
+    gc.collect()
+
+    # -----------------------------------------------------------------------
+    # Frequency-response excerpt (used only for plotting).
+    # Extract a centred window from the downsampled data so the plot can be
+    # generated without retaining the full-resolution audio.
+    # -----------------------------------------------------------------------
+    n_excerpt = min(len(data_ds), int(_FREQ_EXCERPT_DURATION_S * sr_ds))
+    mid = len(data_ds) // 2
+    ex_start = max(0, mid - n_excerpt // 2)
+    ex_end = ex_start + n_excerpt
+
+    freq_audio: dict = {}
+    center_col = 2 if n_ch > 2 else 0
+    freq_audio["center"] = data_ds[ex_start:ex_end, center_col].copy()
+    if lfe_idx is not None and lfe_idx < data_ds.shape[1]:
+        freq_audio["lfe"] = data_ds[ex_start:ex_end, lfe_idx].copy()
+    freq_audio["sr"] = sr_ds
+
+    # -----------------------------------------------------------------------
+    # K-weighted loudness (all at _LOUDNESS_SR)
+    # -----------------------------------------------------------------------
+    weighted = _k_weight(data_ds, sr_ds)
 
     # 400 ms momentary blocks (75% overlap) drive the integrated loudness.
-    z_400 = _block_mean_square(weighted, sr, win_s=0.4, step_s=0.1)
+    z_400 = _block_mean_square(weighted, sr_ds, win_s=0.4, step_s=0.1)
     integrated = _integrated_loudness(z_400, weights)
     momentary = _loudness_from_z(z_400, weights) if z_400.shape[0] else \
         np.array([])
 
     # 3 s short-term blocks drive the LRA and the time-series plot.
-    z_3s = _block_mean_square(weighted, sr, win_s=3.0, step_s=0.1)
+    z_3s = _block_mean_square(weighted, sr_ds, win_s=3.0, step_s=0.1)
     short_term = _loudness_from_z(z_3s, weights) if z_3s.shape[0] else \
         np.array([])
     lra = _loudness_range(short_term)
 
-    true_peak, tp_per_ch = _true_peak_dbtp(data, sr)
-    dr = _dr_score(data, sr)
-    rms = _rms_dbfs(data)
+    del weighted
+    gc.collect()
+
+    dr = _dr_score(data_ds, sr_ds)
+    rms = _rms_dbfs(data_ds)
 
     print("=== Dynamic Range / Loudness ===")
     print(f"  Integrated loudness : {integrated:8.1f} LUFS")
@@ -722,26 +821,21 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
             print(f"  Channel {ch + 1:2d}: {ch_int:8.1f} LUFS  "
                   f"true peak {tp_per_ch[ch]:7.1f} dBTP{tag}")
 
-    # LFE analysis if LFE channel is identified
+    # -----------------------------------------------------------------------
+    # LFE channel analysis (at _LOUDNESS_SR; True Peak already computed above)
+    # -----------------------------------------------------------------------
     lfe_loudness = float("nan")
-    lfe_peak = float("nan")
     lfe_rms = float("nan")
     lfe_crest = float("nan")
     lfe_activity = float("nan")
 
-    lfe_idx = None
-    if lfe_ch:
-        lfe_idx = lfe_ch[0] - 1  # Convert from 1-based to 0-based index
-    elif lfe_channel is not None and 0 <= lfe_channel < n_ch:
-        lfe_idx = lfe_channel
-
     if lfe_idx is not None:
-        lfe_data = _lfe_lowpass(data[:, lfe_idx], sr)
-        lfe_loudness = _lfe_loudness(lfe_data, sr)
-        lfe_peak = _lfe_true_peak_dbtp(lfe_data, sr)
-        lfe_rms = _lfe_rms_dbfs(lfe_data)
-        lfe_crest = _lfe_crest_factor(lfe_data)
-        lfe_activity = _lfe_activity(lfe_data)
+        lfe_data_ds = _lfe_lowpass(data_ds[:, lfe_idx], sr_ds)
+        lfe_loudness = _lfe_loudness(lfe_data_ds, sr_ds)
+        lfe_rms = _lfe_rms_dbfs(lfe_data_ds)
+        lfe_crest = _lfe_crest_factor(lfe_data_ds)
+        lfe_activity = _lfe_activity(lfe_data_ds)
+        del lfe_data_ds
 
         print("\n=== LFE Channel Analysis ===")
         print(f"  Low-pass filter     : {_LFE_LOWPASS_HZ:.0f} Hz "
@@ -766,9 +860,9 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
                 print(f"  [INFO] LFE very quiet ({ratio:.1f} dB) - check if "
                       f"intentional.")
 
-    # Surround channel RMS relative to center
+    # Surround channel RMS relative to center (at _LOUDNESS_SR)
     center_dbfs, surround_results = _surround_rms_relative_to_center(
-        data, sr, effective_layout)
+        data_ds, sr_ds, effective_layout)
 
     if surround_results:
         print("\n=== Channel RMS relative to Center ===")
@@ -780,8 +874,9 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         for label, rms_dbfs, rel_db in surround_results:
             print(f"  {label}     : {rms_dbfs:8.1f} dBFS  {rel_db:+.1f} dB rel. C")
 
-    # DC offset
-    dc_offsets = _dc_offset_per_channel(data)
+    # DC offset (at _LOUDNESS_SR; DC is frequency-zero and unaffected by
+    # resampling except for negligible filter-edge artefacts)
+    dc_offsets = _dc_offset_per_channel(data_ds)
     any_dc_warn = any(abs(dc) >= _DC_OFFSET_WARN_LINEAR for _, dc, _ in dc_offsets)
     print("\n=== DC Offset ===")
     print(f"  Warning threshold   : {_DC_OFFSET_WARN_LINEAR:.0e} "
@@ -812,7 +907,9 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         "center_rms_dbfs": center_dbfs,
         "surround_rms": surround_results,
         "dc_offsets": dc_offsets,
-        "audio_data": data,  # Raw audio for frequency analysis
+        # Compact excerpt for the frequency-response plot.  The full-resolution
+        # audio is no longer retained after the downsample step above.
+        "freq_audio": freq_audio,
     }
 
 
@@ -915,19 +1012,17 @@ def _plot(result, out_path):
         ax2.set_xlim(-50, 0)
 
     # ===== Subplot 3: Frequency Response (Center vs LFE) =====
-    audio_data = result["audio_data"]
-    sr = result["sr"]
-    n_ch = result["n_channels"]
+    # freq_audio contains a compact excerpt extracted at _LOUDNESS_SR so that
+    # the full-resolution audio does not need to be kept alive for the plot.
+    freq_audio = result.get("freq_audio", {})
+    freq_sr = freq_audio.get("sr", result["sr"])
 
-    center_idx = 2 if n_ch > 2 else None
-    lfe_idx = 3 if n_ch > 3 else None
-
-    if center_idx is not None and audio_data.shape[1] > center_idx:
-        freqs_c, mag_c = _frequency_response(audio_data[:, center_idx], sr)
+    if "center" in freq_audio:
+        freqs_c, mag_c = _frequency_response(freq_audio["center"], freq_sr)
         ax3.plot(freqs_c, mag_c, lw=1.0, color="#1f77b4", label="Center")
 
-    if lfe_idx is not None and audio_data.shape[1] > lfe_idx:
-        freqs_l, mag_l = _frequency_response(audio_data[:, lfe_idx], sr)
+    if "lfe" in freq_audio:
+        freqs_l, mag_l = _frequency_response(freq_audio["lfe"], freq_sr)
         ax3.plot(freqs_l, mag_l, lw=1.0, color="#d62728", label="LFE")
 
     ax3.set_xscale('log')

@@ -422,20 +422,30 @@ All formats supported by `libsndfile` / `soundfile`:
 
 ## Memory Usage
 
-The script loads the **entire audio file into RAM** before analysis begins. Additionally, the K-weighting filter and the 4× oversampling for True Peak each create a full copy of the data internally, so peak memory usage can reach **3–4× the raw file size**.
+### How memory is managed
 
-### Approximate RAM requirement
+The script loads the entire file into RAM at the original sample rate. The following optimisations keep peak RAM well below the raw-file size:
 
-| Duration | Channels | Sample rate | RAM (approx.) |
+1. **True Peak** is computed **one channel at a time** at the original sample rate (4× oversampling per BS.1770 Annex 2). Only one oversampled channel exists in RAM at any moment instead of the entire 4× array.
+2. **LFE True Peak** is computed from the filtered LFE channel (one channel) before the main array is freed.
+3. After True Peak is done the entire audio is **downsampled to 16 kHz** for all remaining metrics (K-weighted loudness, LRA, DR score, RMS, LFE loudness/crest/activity, surround RMS, DC offset). The downsampled copy is ~3× smaller for a 48 kHz source.
+4. The **original full-resolution array is immediately freed** after the downsampling step.
+5. The **frequency-response plot** uses only a 300-second centred excerpt at 16 kHz, so no large array is retained after analysis.
+
+### Approximate peak RAM requirement
+
+| Duration | Channels | Source SR | Peak RAM (approx.) |
 |---|---|---|---|
-| 10 min | stereo | 48 kHz | ~0.6 GB |
-| 30 min | 5.1 | 48 kHz | ~2.5 GB |
-| 2 h | 7.1 | 48 kHz | ~40 GB |
-| 3 h | 7.1 | 48 kHz | ~60 GB |
+| 10 min | stereo | 48 kHz | < 0.2 GB |
+| 30 min | 5.1 | 48 kHz | ~0.5 GB |
+| 2 h | 7.1 | 48 kHz | ~15 GB |
+| 3 h | 7.1 | 48 kHz | ~22 GB |
+
+Peak occurs during the True Peak phase when the original full-resolution file and one 4× oversampled channel coexist. After that point RAM drops to around 1/3 of the raw-file size.
 
 ### Recommendation: analyse representative excerpts
 
-For long feature film files it is strongly recommended to **extract a representative excerpt** before running the analysis — for example the middle 5–10 minutes of the film. Loudness metrics (LUFS, LRA), True Peak and the frequency response are statistically stable over a few minutes of typical programme content; analysing the full 2–3 hour file does not materially improve the accuracy of these metrics.
+For very long feature film files it is still recommended to **extract a representative excerpt** before running the analysis — for example the middle 5–10 minutes of the film. Loudness metrics (LUFS, LRA), True Peak and the frequency response are statistically stable over a few minutes of typical programme content.
 
 Example using `ffmpeg` to extract 10 minutes starting at the 30-minute mark:
 
@@ -443,8 +453,6 @@ Example using `ffmpeg` to extract 10 minutes starting at the 30-minute mark:
 ffmpeg -ss 00:30:00 -t 00:10:00 -i film.wav -c copy excerpt.wav
 python AnalyzeDynamicRange.py excerpt.wav
 ```
-
-A block-wise streaming implementation that would remove this limitation is not yet available.
 
 ---
 
