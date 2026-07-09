@@ -63,6 +63,13 @@ _LRA_REL_GATE_LU = 20.0     # relative gate for LRA (EBU Tech 3342)
 # margin while reducing the working-set by 3× at a typical 48 kHz source.
 _LOUDNESS_SR = 16000
 
+# LFE metrics only require signal content up to 120 Hz.  A 4 kHz working rate
+# (Nyquist = 2 kHz) is more than sufficient and reduces the LFE array size by
+# 4× vs. _LOUDNESS_SR, making the lowpass filter and band analysis ~4× faster.
+# Surround RMS is still measured at _LOUDNESS_SR to avoid an implicit lowpass
+# on L, R and Center channels that would skew the relative level comparison.
+_LFE_SR = 4000
+
 
 def _biquad_kweighting(sr):
     """Return the two BS.1770-4 K-weighting biquads for a sample rate.
@@ -116,11 +123,12 @@ def _k_weight(data, sr):
         sr    Sample rate in Hz.
 
     Returns
-        K-weighted array of the same shape.
+        K-weighted array of the same shape and dtype as *data*.
     """
     (b1, a1), (b2, a2) = _biquad_kweighting(sr)
     stage1 = lfilter(b1, a1, data, axis=0)
-    return lfilter(b2, a2, stage1, axis=0)
+    out = lfilter(b2, a2, stage1, axis=0)
+    return out.astype(data.dtype, copy=False)
 
 
 def _channel_weights(n_ch, layout=None, lfe_channel=None,
@@ -892,17 +900,26 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
             print(f"  Channel {ch + 1:2d}: {ch_int:8.1f} LUFS{tag}")
 
     # -----------------------------------------------------------------------
-    # LFE channel analysis (at _LOUDNESS_SR)
+    # LFE channel analysis (at _LFE_SR – much cheaper than _LOUDNESS_SR)
     # -----------------------------------------------------------------------
+    # Only the LFE channel is downsampled to _LFE_SR.  The lowpass cut-off is
+    # 120 Hz, well below the _LFE_SR Nyquist (2 kHz), so filtering at _LFE_SR
+    # produces identical results while operating on an array 4× shorter.
+    # Surround and other channels are intentionally kept at _LOUDNESS_SR so
+    # that no implicit lowpass distorts the relative RMS comparison.
     lfe_band_result = None
-    lfe_data_ds = None  # kept alive until after _surround_rms_relative_to_center
+    lfe_data_lfe_sr = None  # kept alive until after _surround_rms_relative_to_center
 
     if lfe_idx is not None:
-        lfe_data_ds = _lfe_lowpass(data_ds[:, lfe_idx], sr_ds)
-        lfe_band_result = _lfe_band_analysis(lfe_data_ds, sr_ds, integrated)
+        lfe_raw_lfe_sr, sr_lfe = _downsample(
+            data_ds[:, lfe_idx].reshape(-1, 1), sr_ds, _LFE_SR)
+        lfe_raw_lfe_sr = lfe_raw_lfe_sr[:, 0]
+        lfe_data_lfe_sr = _lfe_lowpass(lfe_raw_lfe_sr, sr_lfe)
+        del lfe_raw_lfe_sr
+        lfe_band_result = _lfe_band_analysis(lfe_data_lfe_sr, sr_lfe, integrated)
         # Short-term RMS curve for the LFE plot strip (3 s window, 0.1 s hop).
-        lfe_2d = lfe_data_ds.reshape(-1, 1)
-        lfe_ms = _block_mean_square(lfe_2d, sr_ds, win_s=3.0, step_s=0.1)
+        lfe_2d = lfe_data_lfe_sr.reshape(-1, 1)
+        lfe_ms = _block_mean_square(lfe_2d, sr_lfe, win_s=3.0, step_s=0.1)
         lfe_rms_db = 10.0 * np.log10(np.maximum(lfe_ms[:, 0], 1e-20))
     else:
         lfe_rms_db = None
@@ -958,10 +975,14 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         print(f"    LFE depth      : {bass_lbl}")
 
     # Surround channel RMS relative to center (at _LOUDNESS_SR).
-    # Pass the already filtered LFE signal to avoid a redundant low-pass pass.
+    # L, R, Center and surround channels are measured from the full 16 kHz
+    # representation so that no implicit low-pass is applied to them.
+    # The pre-filtered LFE signal (at _LFE_SR) is passed separately; its RMS
+    # is sample-rate-independent after the 120 Hz low-pass.
     center_dbfs, surround_results = _surround_rms_relative_to_center(
-        data_ds, sr_ds, effective_layout, lfe_filtered=lfe_data_ds)
-    del lfe_data_ds
+        data_ds, sr_ds, effective_layout,
+        lfe_filtered=lfe_data_lfe_sr)
+    del lfe_data_lfe_sr
     _tick("Surround RMS relative to Center")
 
     if surround_results:
