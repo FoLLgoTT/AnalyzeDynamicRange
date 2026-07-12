@@ -13,14 +13,18 @@ so no extra packages beyond numpy/scipy/soundfile are required):
     - Momentary / Short-term loudness    time-series (400 ms / 3 s windows)
 
 Channel handling
-    By default a Microsoft wave format channel order is assumed for the loudness sum:
-        mono   : [C]
-        stereo : [L, R]
-        5.1    : [L, R, C, LFE, Ls, Rs]
-        6.1    : [L, R, C, LFE, Rc, Ls, Rs]
-        7.1    : [L, R, C, LFE, Lrs, Rrs, Ls, Rs]
-    The LFE is excluded and surround channels are weighted +1.5 dB per BS.1770.
-    Use --layout / --lfe-channel to override.
+    The channel layout is auto-detected from the channel count using the
+    Microsoft wave format channel order:
+        mono        : [C]
+        stereo      : [L, R]
+        5.1  (6 ch) : [L, R, C, LFE, Ls, Rs]
+        6.1  (7 ch) : [L, R, C, LFE, Rc, Ls, Rs]
+        7.1  (8 ch) : [L, R, C, LFE, Lrs, Rrs, Ls, Rs]
+        >7.1 (>8 ch): 7.1 bed applied to ch 1–8; height channels excluded
+                      with a warning (e.g. 9.1.4, 9.1.6, Atmos beds)
+    The LFE channel is always excluded from the loudness sum.
+    Surround channels are weighted +1.5 dB per BS.1770.
+    Use --layout / --lfe-channel to override the auto-detection.
 
 Requirements
     pip install numpy scipy soundfile

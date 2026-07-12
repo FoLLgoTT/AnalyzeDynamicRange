@@ -282,6 +282,9 @@ Channel order according to Microsoft wave format (see [here](https://learn.micro
 | 5.1 (6 ch) | L R C LFE Ls Rs |
 | 6.1 (7 ch) | L R C LFE Rc Ls Rs |
 | 7.1 (8 ch) | L R C LFE Lrs Rrs Ls Rs |
+| >7.1 (>8 ch) | 7.1 bed applied to ch 1–8; height channels (ch 9+) excluded with a warning |
+
+The layout is auto-detected from the channel count. Use `--layout` to override.
 
 ### Channel weighting (BS.1770)
 
@@ -290,6 +293,7 @@ Channel order according to Microsoft wave format (see [here](https://learn.micro
 | L, R, C | 1.0 |
 | LFE | 0.0 (excluded) |
 | Ls, Rs, Rc, Lrs, Rrs | 1.41 (+1.5 dB) |
+| Height channels (ch 9+) | 0.0 (excluded) |
 
 ---
 
@@ -394,6 +398,7 @@ Surround channels reported per layout:
 | 5.1 | Ls (4), Rs (5) |
 | 6.1 | Rc (4), Ls (5), Rs (6) |
 | 7.1 | Lrs (4), Rrs (5), Ls (6), Rs (7) |
+| >7.1 | Same as 7.1 — height channels (ch 9+) are not reported |
 
 ---
 
