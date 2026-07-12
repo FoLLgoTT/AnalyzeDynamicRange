@@ -155,7 +155,8 @@ def _channel_weights(n_ch, layout=None, lfe_channel=None,
     Parameters
         n_ch              Number of channels in the file.
         layout            Optional explicit layout: one of "mono", "stereo",
-                          "5.1", "6.1", "7.1" or None for auto-detection.
+                          "5.1", "6.1", "7.1", or None (auto-detect by
+                          channel count).
         lfe_channel       Optional 0-based index of the LFE channel to
                           exclude.
         exclude_surround  When True, the surround channels are excluded from
@@ -170,11 +171,8 @@ def _channel_weights(n_ch, layout=None, lfe_channel=None,
     surround = 0.0 if exclude_surround else 1.41
     weights = np.ones(n_ch, dtype=np.float32)
 
-    if layout is None:
-        if n_ch >= 6:
-            layout = "5.1" if n_ch == 6 else "6.1" if n_ch == 7 else "7.1" if n_ch == 8 else "auto"
-        else:
-            layout = "auto"
+    if layout is None and n_ch >= 6:
+        layout = "5.1" if n_ch == 6 else "6.1" if n_ch == 7 else "7.1"
 
     # Channel order: L R C LFE [Rc] [Lrs Rrs] Ls Rs.
     if layout == "5.1" and n_ch >= 6:
@@ -192,10 +190,7 @@ def _channel_weights(n_ch, layout=None, lfe_channel=None,
         weights[5] = surround            # Rrs
         weights[6] = surround            # Ls
         weights[7] = surround            # Rs
-    elif layout == "auto":
-        # Weight any channel beyond the front L/R/C as surround.
-        if n_ch > 3:
-            weights[3:] = surround
+        weights[8:] = 0.0                # Height channels excluded (9.1.4, 9.1.6, …)
 
     if lfe_channel is not None and 0 <= lfe_channel < n_ch:
         weights[lfe_channel] = 0.0
@@ -733,7 +728,7 @@ def _surround_rms_relative_to_center(data, sr, effective_layout,
         data              Full audio array of shape (n_samples, n_channels).
         sr                Sample rate in Hz.
         effective_layout  Resolved layout string: "5.1", "6.1", "7.1", or
-                          "auto".
+                          "" for mono/stereo/unknown.
         lfe_filtered      Optional pre-filtered LFE channel (1D array).
                           When supplied the LFE low-pass step is skipped.
 
@@ -856,7 +851,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     elif n_ch >= 8:
         effective_layout = "7.1"
     else:
-        effective_layout = "auto"
+        effective_layout = ""
 
     print(f"File         : {path}")
     print(f"Sample rate  : {sr} Hz")
@@ -884,6 +879,11 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
             print(f"Surround ch  : {surround_ch} (excluded from analysis)")
         else:
             print(f"Surround ch  : {surround_ch} (weighted +1.5 dB)")
+    if n_ch > 8:
+        height_ch = list(range(9, n_ch + 1))
+        print(f"[WARN] {len(height_ch)} height channel(s) detected "
+              f"(ch {height_ch[0]}–{height_ch[-1]}); "
+              f"excluded from all metrics. 7.1 bed assumed for ch 1–8.")
     print()
 
     # Resolve LFE channel index (0-based) early so it can be used before and
@@ -965,7 +965,10 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
             ch_int = _integrated_loudness(z_400, ch_weight)
             tag = ""
             if base_weights[ch] == 0.0:
-                tag = " (LFE, excluded from sum)"
+                if lfe_idx is not None and ch == lfe_idx:
+                    tag = " (LFE, excluded from sum)"
+                else:
+                    tag = " (height channel, excluded from sum)"
             elif abs(base_weights[ch] - 1.41) < 1e-6:
                 tag = " (surround, excluded from sum)" if exclude_surround \
                     else " (surround)"
