@@ -913,9 +913,15 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     # -----------------------------------------------------------------------
     freq_audio: dict = {}
     left_col = 0
-    center_col = 2 if n_ch > 2 else 0
     freq_audio["left"] = data_ds[:, left_col].copy()
-    freq_audio["center"] = data_ds[:, center_col].copy()
+
+    # For stereo: use right channel; for multi-channel: use center
+    if n_ch == 2:
+        freq_audio["right"] = data_ds[:, 1].copy()
+    elif n_ch > 2:
+        center_col = 2
+        freq_audio["center"] = data_ds[:, center_col].copy()
+
     if lfe_idx is not None and lfe_idx < data_ds.shape[1]:
         freq_audio["lfe"] = data_ds[:, lfe_idx].copy()
     freq_audio["sr"] = sr_ds
@@ -1254,6 +1260,10 @@ def _plot(result, out_path):
     if "left" in freq_audio:
         freqs_c, mag_c = _frequency_response(freq_audio["left"], freq_sr)
         ax3.plot(freqs_c, mag_c, lw=1.0, color="#1fb477", label="Left")
+
+    if "right" in freq_audio:
+        freqs_r, mag_r = _frequency_response(freq_audio["right"], freq_sr)
+        ax3.plot(freqs_r, mag_r, lw=1.0, color="#ff7f0e", label="Right")
 
     if "center" in freq_audio:
         freqs_c, mag_c = _frequency_response(freq_audio["center"], freq_sr)
