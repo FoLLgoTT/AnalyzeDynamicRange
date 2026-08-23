@@ -17,11 +17,14 @@ Channel handling
     Microsoft wave format channel order:
         mono        : [C]
         stereo      : [L, R]
+        5.0  (5 ch) : [L, R, C, Ls, Rs]          (no LFE)
         5.1  (6 ch) : [L, R, C, LFE, Ls, Rs]
         6.1  (7 ch) : [L, R, C, LFE, Rc, Ls, Rs]
         7.1  (8 ch) : [L, R, C, LFE, Lrs, Rrs, Ls, Rs]
         >7.1 (>8 ch): 7.1 bed applied to ch 1–8; height channels excluded
                       with a warning (e.g. 9.1.4, 9.1.6, Atmos beds)
+    4.1 must be selected explicitly via --layout:
+        4.1  (5 ch) : [L, R, C, LFE, Cb]         (LFE = ch 4, Cb = ch 5)
     The LFE channel is always excluded from the loudness sum.
     Surround channels are weighted +1.5 dB per BS.1770.
     Use --layout / --lfe-channel to override the auto-detection.
@@ -159,8 +162,8 @@ def _channel_weights(n_ch, layout=None, lfe_channel=None,
     Parameters
         n_ch              Number of channels in the file.
         layout            Optional explicit layout: one of "mono", "stereo",
-                          "5.1", "6.1", "7.1", or None (auto-detect by
-                          channel count).
+                          "4.1", "5.0", "5.1", "6.1", "7.1", or None
+                          (auto-detect by channel count).
         lfe_channel       Optional 0-based index of the LFE channel to
                           exclude.
         exclude_surround  When True, the surround channels are excluded from
@@ -175,11 +178,19 @@ def _channel_weights(n_ch, layout=None, lfe_channel=None,
     surround = 0.0 if exclude_surround else 1.41
     weights = np.ones(n_ch, dtype=np.float32)
 
-    if layout is None and n_ch >= 6:
+    if layout is None and n_ch == 5:
+        layout = "5.0"
+    elif layout is None and n_ch >= 6:
         layout = "5.1" if n_ch == 6 else "6.1" if n_ch == 7 else "7.1"
 
-    # Channel order: L R C LFE [Rc] [Lrs Rrs] Ls Rs.
-    if layout == "5.1" and n_ch >= 6:
+    # Channel order: L R C [LFE] [Rc] [Lrs Rrs] [Cb] Ls Rs.
+    if layout == "4.1" and n_ch >= 5:
+        weights[3] = 0.0                 # LFE excluded
+        weights[4] = surround            # Cb (Center Back)
+    elif layout == "5.0" and n_ch >= 5:
+        weights[3] = surround            # Ls
+        weights[4] = surround            # Rs
+    elif layout == "5.1" and n_ch >= 6:
         weights[3] = 0.0                 # LFE excluded
         weights[4] = surround            # Ls
         weights[5] = surround            # Rs
@@ -754,7 +765,15 @@ def _surround_rms_relative_to_center(data, sr, effective_layout,
         (1, "R  ", "none"),
     ]
 
-    if n_ch >= 4:
+    if effective_layout == "4.1" and n_ch >= 5:
+        channel_map.append((3, "LFE", "lowpass"))
+        channel_map.append((4, "Cb ", "highpass"))
+    elif effective_layout == "5.0" and n_ch >= 5:
+        channel_map += [
+            (3, "Ls ", "highpass"),
+            (4, "Rs ", "highpass"),
+        ]
+    elif n_ch >= 4:
         channel_map.append((3, "LFE", "lowpass"))
 
     if effective_layout == "7.1":
@@ -770,7 +789,7 @@ def _surround_rms_relative_to_center(data, sr, effective_layout,
             (5, "Ls ", "highpass"),
             (6, "Rs ", "highpass"),
         ]
-    elif n_ch >= 6:
+    elif effective_layout == "5.1" and n_ch >= 6:
         channel_map += [
             (4, "Ls ", "highpass"),
             (5, "Rs ", "highpass"),
@@ -848,6 +867,8 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     # Resolve effective layout once so it can be reused throughout.
     if layout is not None:
         effective_layout = layout
+    elif n_ch == 5:
+        effective_layout = "5.0"
     elif n_ch == 6:
         effective_layout = "5.1"
     elif n_ch == 7:
@@ -1375,7 +1396,7 @@ def main():
     ap.add_argument("audio", nargs="+",
                     help="Path(s) to audio files; glob patterns are supported "
                          "(e.g. *.wav, /path/to/reels/*.wav)")
-    ap.add_argument("--layout", choices=["mono", "stereo", "5.1", "6.1", "7.1"],
+    ap.add_argument("--layout", choices=["mono", "stereo", "4.1", "5.0", "5.1", "6.1", "7.1"],
                     default=None,
                     help="Channel layout override (default: auto-detect)")
     ap.add_argument("--lfe-channel", type=int, default=None, metavar="N",

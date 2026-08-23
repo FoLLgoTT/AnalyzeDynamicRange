@@ -57,7 +57,7 @@ All channels are measured against the unfiltered Center channel (Ch 3) as refere
 |---------|---------------|
 | L, R | none |
 | LFE | low-pass at 120 Hz (Butterworth order 4, zero-phase) |
-| Ls, Rs, Rc, Lrs, Rrs | high-pass at 80 Hz (Butterworth order 4, zero-phase) |
+| Cb, Ls, Rs, Rc, Lrs, Rrs | high-pass at 80 Hz (Butterworth order 4, zero-phase) |
 
 ### Signal Processing
 
@@ -123,6 +123,8 @@ Each file produces its own `<filename>.png` plot. When multiple files match, a s
 Overrides automatic channel layout detection:
 
 ```bash
+python AnalyzeDynamicRange.py movie.wav --layout 4.1
+python AnalyzeDynamicRange.py movie.wav --layout 5.0
 python AnalyzeDynamicRange.py movie.wav --layout 5.1
 python AnalyzeDynamicRange.py movie.wav --layout 6.1
 python AnalyzeDynamicRange.py movie.wav --layout 7.1
@@ -261,8 +263,9 @@ The thresholds for each label are documented in the sections below.
 ### Panel 7 — Frequency Response
 
 - Green curve: Left channel (Ch 1)
-- Blue curve: Center channel (Ch 3)
-- Red curve: LFE channel (Ch 4)
+- Orange curve: Right channel (Ch 2) — stereo only
+- Blue curve: Center channel (Ch 3) — multi-channel only
+- Red curve: LFE channel — multi-channel with LFE only
 - X-axis: 1–200 Hz, **logarithmic**
 - Y-axis: 50 dB range (normalized to 0 dB peak)
 - **1/24 octave smoothing** via Welch PSD averaged into fractional-octave bands
@@ -279,12 +282,14 @@ Channel order according to Microsoft wave format (see [here](https://learn.micro
 |--------|----------|
 | Mono (1 ch) | C |
 | Stereo (2 ch) | L R |
+| 4.1 (5 ch, explicit) | L R C LFE Cb |
+| 5.0 (5 ch) | L R C Ls Rs |
 | 5.1 (6 ch) | L R C LFE Ls Rs |
 | 6.1 (7 ch) | L R C LFE Rc Ls Rs |
 | 7.1 (8 ch) | L R C LFE Lrs Rrs Ls Rs |
 | >7.1 (>8 ch) | 7.1 bed applied to ch 1–8; height channels (ch 9+) excluded with a warning |
 
-The layout is auto-detected from the channel count. Use `--layout` to override.
+The layout is auto-detected from the channel count. 5 channels are detected as **5.0** by default; use `--layout 4.1` to override. Use `--layout` to override for any other format.
 
 ### Channel weighting (BS.1770)
 
@@ -292,8 +297,11 @@ The layout is auto-detected from the channel count. Use `--layout` to override.
 |---|---|
 | L, R, C | 1.0 |
 | LFE | 0.0 (excluded) |
-| Ls, Rs, Rc, Lrs, Rrs | 1.41 (+1.5 dB) |
+| Cb, Ls, Rs, Rc, Lrs, Rrs | 1.41 (+1.5 dB) |
 | Height channels (ch 9+) | 0.0 (excluded) |
+
+> **5.0**: No LFE channel present; Ls and Rs are weighted +1.5 dB.  
+> **4.1**: LFE = Ch 4 (excluded), Cb = Ch 5 (+1.5 dB).
 
 ---
 
@@ -395,9 +403,11 @@ Surround channels reported per layout:
 
 | Layout | Channels reported |
 |---|---|
-| 5.1 | Ls (4), Rs (5) |
-| 6.1 | Rc (4), Ls (5), Rs (6) |
-| 7.1 | Lrs (4), Rrs (5), Ls (6), Rs (7) |
+| 4.1 | LFE (4), Cb (5) |
+| 5.0 | Ls (4), Rs (5) |
+| 5.1 | LFE (4), Ls (5), Rs (6) |
+| 6.1 | LFE (4), Rc (5), Ls (6), Rs (7) |
+| 7.1 | LFE (4), Lrs (5), Rrs (6), Ls (7), Rs (8) |
 | >7.1 | Same as 7.1 — height channels (ch 9+) are not reported |
 
 ---
