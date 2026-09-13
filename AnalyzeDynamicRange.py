@@ -25,6 +25,8 @@ Channel handling
                       with a warning (e.g. 9.1.4, 9.1.6, Atmos beds)
     4.1 must be selected explicitly via --layout:
         4.1  (5 ch) : [L, R, C, LFE, Cb]         (LFE = ch 4, Cb = ch 5)
+    2.1 must be selected explicitly via --layout:
+        2.1  (3 ch) : [L, R, LFE]                (LFE = ch 3, no Center)
     The LFE channel is always excluded from the loudness sum.
     Surround channels are weighted +1.5 dB per BS.1770.
     Use --layout / --lfe-channel to override the auto-detection.
@@ -162,7 +164,7 @@ def _channel_weights(n_ch, layout=None, lfe_channel=None,
     Parameters
         n_ch              Number of channels in the file.
         layout            Optional explicit layout: one of "mono", "stereo",
-                          "4.1", "5.0", "5.1", "6.1", "7.1", or None
+                          "2.1", "4.1", "5.0", "5.1", "6.1", "7.1", or None
                           (auto-detect by channel count).
         lfe_channel       Optional 0-based index of the LFE channel to
                           exclude.
@@ -184,7 +186,10 @@ def _channel_weights(n_ch, layout=None, lfe_channel=None,
         layout = "5.1" if n_ch == 6 else "6.1" if n_ch == 7 else "7.1"
 
     # Channel order: L R C [LFE] [Rc] [Lrs Rrs] [Cb] Ls Rs.
-    if layout == "4.1" and n_ch >= 5:
+    # 2.1 is a special case with no Center channel: L R LFE.
+    if layout == "2.1" and n_ch >= 3:
+        weights[2] = 0.0                 # LFE excluded
+    elif layout == "4.1" and n_ch >= 5:
         weights[3] = 0.0                 # LFE excluded
         weights[4] = surround            # Cb (Center Back)
     elif layout == "5.0" and n_ch >= 5:
@@ -734,6 +739,7 @@ def _surround_rms_relative_to_center(data, sr, effective_layout,
 
     Channel mapping per layout (0-based):
         all    : L = 0, R = 1, C = 2 (reference)
+        2.1    : L = 0, R = 1, LFE = 2 (no Center reference – table is skipped)
         >= 5.1 : LFE = 3
         5.1    : Ls = 4, Rs = 5
         6.1    : Rc = 4, Ls = 5, Rs = 6
@@ -754,6 +760,11 @@ def _surround_rms_relative_to_center(data, sr, effective_layout,
     """
     n_ch = data.shape[1]
     center_idx = 2
+
+    # 2.1 has no Center channel (L, R, LFE only), so there is no reference
+    # to measure other channels against.
+    if effective_layout == "2.1":
+        return float("nan"), []
 
     if center_idx >= n_ch:
         return float("nan"), []
@@ -936,8 +947,9 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     left_col = 0
     freq_audio["left"] = data_ds[:, left_col].copy()
 
-    # For stereo: use right channel; for multi-channel: use center
-    if n_ch == 2:
+    # For stereo / 2.1 (no Center channel): use right channel; for other
+    # multi-channel layouts with a Center channel: use center.
+    if n_ch == 2 or effective_layout == "2.1":
         freq_audio["right"] = data_ds[:, 1].copy()
     elif n_ch > 2:
         center_col = 2
@@ -1396,7 +1408,7 @@ def main():
     ap.add_argument("audio", nargs="+",
                     help="Path(s) to audio files; glob patterns are supported "
                          "(e.g. *.wav, /path/to/reels/*.wav)")
-    ap.add_argument("--layout", choices=["mono", "stereo", "4.1", "5.0", "5.1", "6.1", "7.1"],
+    ap.add_argument("--layout", choices=["mono", "stereo", "2.1", "4.1", "5.0", "5.1", "6.1", "7.1"],
                     default=None,
                     help="Channel layout override (default: auto-detect)")
     ap.add_argument("--lfe-channel", type=int, default=None, metavar="N",
