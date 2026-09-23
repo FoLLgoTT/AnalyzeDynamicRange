@@ -124,6 +124,7 @@ Overrides automatic channel layout detection:
 
 ```bash
 python AnalyzeDynamicRange.py movie.wav --layout 2.1
+python AnalyzeDynamicRange.py movie.wav --layout 4.0
 python AnalyzeDynamicRange.py movie.wav --layout 4.1
 python AnalyzeDynamicRange.py movie.wav --layout 5.0
 python AnalyzeDynamicRange.py movie.wav --layout 5.1
@@ -284,6 +285,7 @@ Channel order according to Microsoft wave format (see [here](https://learn.micro
 | Mono (1 ch) | C |
 | Stereo (2 ch) | L R |
 | 2.1 (3 ch, explicit) | L R LFE |
+| 4.0 (4 ch, explicit) | L R C Cb |
 | 4.1 (5 ch, explicit) | L R C LFE Cb |
 | 5.0 (5 ch) | L R C Ls Rs |
 | 5.1 (6 ch) | L R C LFE Ls Rs |
@@ -291,7 +293,7 @@ Channel order according to Microsoft wave format (see [here](https://learn.micro
 | 7.1 (8 ch) | L R C LFE Lrs Rrs Ls Rs |
 | >7.1 (>8 ch) | 7.1 bed applied to ch 1–8; height channels (ch 9+) excluded with a warning |
 
-The layout is auto-detected from the channel count. 3 channels are always treated as unknown by default; use `--layout 2.1` to select L R LFE. 5 channels are detected as **5.0** by default; use `--layout 4.1` to override. Use `--layout` to override for any other format.
+The layout is auto-detected from the channel count. 3 channels are always treated as unknown by default; use `--layout 2.1` to select L R LFE. 4 channels are always treated as unknown by default; use `--layout 4.0` to select L R C Cb. 5 channels are detected as **5.0** by default; use `--layout 4.1` to override. Use `--layout` to override for any other format.
 
 ### Channel weighting (BS.1770)
 
@@ -304,6 +306,7 @@ The layout is auto-detected from the channel count. 3 channels are always treate
 
 > **5.0**: No LFE channel present; Ls and Rs are weighted +1.5 dB.  
 > **4.1**: LFE = Ch 4 (excluded), Cb = Ch 5 (+1.5 dB).  
+> **4.0**: No LFE channel present; Cb = Ch 4 (+1.5 dB).  
 > **2.1**: No Center channel; LFE = Ch 3 (excluded). L and R are unweighted (1.0); no surround gain is applied since there are no surround channels.
 
 ---
@@ -407,6 +410,7 @@ Surround channels reported per layout:
 | Layout | Channels reported |
 |---|---|
 | 2.1 | Not reported — no Center channel to reference against |
+| 4.0 | Cb (4) |
 | 4.1 | LFE (4), Cb (5) |
 | 5.0 | Ls (4), Rs (5) |
 | 5.1 | LFE (4), Ls (5), Rs (6) |

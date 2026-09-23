@@ -25,6 +25,8 @@ Channel handling
                       with a warning (e.g. 9.1.4, 9.1.6, Atmos beds)
     4.1 must be selected explicitly via --layout:
         4.1  (5 ch) : [L, R, C, LFE, Cb]         (LFE = ch 4, Cb = ch 5)
+    4.0 must be selected explicitly via --layout:
+        4.0  (4 ch) : [L, R, C, Cb]               (no LFE, Cb = ch 4)
     2.1 must be selected explicitly via --layout:
         2.1  (3 ch) : [L, R, LFE]                (LFE = ch 3, no Center)
     The LFE channel is always excluded from the loudness sum.
@@ -164,8 +166,8 @@ def _channel_weights(n_ch, layout=None, lfe_channel=None,
     Parameters
         n_ch              Number of channels in the file.
         layout            Optional explicit layout: one of "mono", "stereo",
-                          "2.1", "4.1", "5.0", "5.1", "6.1", "7.1", or None
-                          (auto-detect by channel count).
+                          "2.1", "4.0", "4.1", "5.0", "5.1", "6.1", "7.1",
+                          or None (auto-detect by channel count).
         lfe_channel       Optional 0-based index of the LFE channel to
                           exclude.
         exclude_surround  When True, the surround channels are excluded from
@@ -189,6 +191,8 @@ def _channel_weights(n_ch, layout=None, lfe_channel=None,
     # 2.1 is a special case with no Center channel: L R LFE.
     if layout == "2.1" and n_ch >= 3:
         weights[2] = 0.0                 # LFE excluded
+    elif layout == "4.0" and n_ch >= 4:
+        weights[3] = surround            # Cb (Center Back), no LFE
     elif layout == "4.1" and n_ch >= 5:
         weights[3] = 0.0                 # LFE excluded
         weights[4] = surround            # Cb (Center Back)
@@ -776,7 +780,9 @@ def _surround_rms_relative_to_center(data, sr, effective_layout,
         (1, "R  ", "none"),
     ]
 
-    if effective_layout == "4.1" and n_ch >= 5:
+    if effective_layout == "4.0" and n_ch >= 4:
+        channel_map.append((3, "Cb ", "highpass"))
+    elif effective_layout == "4.1" and n_ch >= 5:
         channel_map.append((3, "LFE", "lowpass"))
         channel_map.append((4, "Cb ", "highpass"))
     elif effective_layout == "5.0" and n_ch >= 5:
@@ -1408,7 +1414,7 @@ def main():
     ap.add_argument("audio", nargs="+",
                     help="Path(s) to audio files; glob patterns are supported "
                          "(e.g. *.wav, /path/to/reels/*.wav)")
-    ap.add_argument("--layout", choices=["mono", "stereo", "2.1", "4.1", "5.0", "5.1", "6.1", "7.1"],
+    ap.add_argument("--layout", choices=["mono", "stereo", "2.1", "4.0", "4.1", "5.0", "5.1", "6.1", "7.1"],
                     default=None,
                     help="Channel layout override (default: auto-detect)")
     ap.add_argument("--lfe-channel", type=int, default=None, metavar="N",
