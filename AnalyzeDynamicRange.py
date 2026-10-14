@@ -408,7 +408,8 @@ _FREQ_RESPONSE_F_MAX = 200.0
 
 def _frequency_response(audio_data, sr, fraction=24,
                         f_min=_FREQ_RESPONSE_F_MIN,
-                        f_max=_FREQ_RESPONSE_F_MAX):
+                        f_max=_FREQ_RESPONSE_F_MAX,
+                        raw=False):
     """Calculate the fractional-octave-smoothed frequency response in dB.
 
     The input is first downsampled to _FREQ_RESPONSE_TARGET_SR Hz so that
@@ -423,6 +424,13 @@ def _frequency_response(audio_data, sr, fraction=24,
         fraction    Octave fraction for smoothing (24 = 1/242 octave).
         f_min       Lowest band centre frequency in Hz.
         f_max       Highest band centre frequency in Hz.
+        raw         When True, return the raw 1/fraction-octave band
+                    centre frequencies and levels (≈161 points at the
+                    default settings) instead of the dense 500-point
+                    PCHIP-interpolated curve used for plotting. The raw
+                    points sit on a fixed, deterministic log-spaced grid,
+                    making them suitable for comparing curves across
+                    different releases (e.g. via JSON export).
 
     Returns
         Tuple (band_freqs, band_db) — band centre frequencies in Hz and the
@@ -472,6 +480,10 @@ def _frequency_response(audio_data, sr, fraction=24,
     # oscillations that cubic splines can produce near step transitions.
     valid_mask = ~np.isnan(band_db)
     n_valid = np.sum(valid_mask)
+
+    if raw:
+        return band_freqs[valid_mask], band_db[valid_mask]
+
     if n_valid >= 4:
         log_x = np.log(band_freqs[valid_mask])
         interp = PchipInterpolator(log_x, band_db[valid_mask])
@@ -1005,6 +1017,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     if not np.isnan(lra) and lra < 5.0:
         print(f"  [INFO] Low LRA ({lra:.1f} LU) - heavily compressed for film.")
 
+    per_channel_results = []
     if per_channel:
         print("\n=== Per-channel integrated loudness ===")
         for ch in range(n_ch):
@@ -1013,15 +1026,26 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
             ch_weight[ch] = 1.0
             ch_int = _integrated_loudness(z_400, ch_weight)
             tag = ""
+            role = "normal"
             if base_weights[ch] == 0.0:
                 if lfe_idx is not None and ch == lfe_idx:
                     tag = " (LFE, excluded from sum)"
+                    role = "lfe"
                 else:
                     tag = " (height channel, excluded from sum)"
+                    role = "height"
             elif abs(base_weights[ch] - 1.41) < 1e-6:
                 tag = " (surround, excluded from sum)" if exclude_surround \
                     else " (surround)"
+                role = "surround"
             print(f"  Channel {ch + 1:2d}: {ch_int:8.1f} LUFS{tag}")
+            per_channel_results.append({
+                "channel": ch + 1,
+                "integrated_lufs": ch_int,
+                "role": role,
+                "excluded_from_sum": exclude_surround and role == "surround"
+                                     or role in ("lfe", "height"),
+            })
 
     # -----------------------------------------------------------------------
     # LFE channel analysis (at _LFE_SR – much cheaper than _LOUDNESS_SR)
@@ -1136,12 +1160,14 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     return {
         "sr": sr,
         "n_channels": n_ch,
+        "effective_layout": effective_layout,
         "integrated_lufs": integrated,
         "lra_lu": lra,
         "rms_dbfs": rms,
         "short_term": short_term,
         "momentary": momentary,
         "step_s": 0.1,
+        "per_channel": per_channel_results,
         "lfe_band_analysis": lfe_band_result,
         "lfe_rms_db": lfe_rms_db,
         "center_rms_dbfs": center_dbfs,
@@ -1150,6 +1176,213 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
         # audio is no longer retained after the downsample step above.
         "freq_audio": freq_audio,
     }
+
+
+def _json_safe(value):
+    """Recursively convert a value into something json.dump can serialise.
+
+    Handles the cases that trip up the stdlib json encoder in this codebase:
+        - numpy scalar/array types        -> native Python int/float/list
+        - float('nan') / float('inf')     -> None (NaN/Inf are not valid JSON)
+        - nested dict/list/tuple          -> processed recursively
+    """
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, np.ndarray):
+        return [_json_safe(v) for v in value.tolist()]
+    if isinstance(value, (np.floating, float)):
+        f = float(value)
+        return None if (math.isnan(f) or math.isinf(f)) else round(f, 1)
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.bool_, bool)):
+        return bool(value)
+    return value
+
+
+def _build_json_report(result):
+    """Build a compact, machine-readable dict from an analyze() result.
+
+    Only summary metrics are included; the full short-term/momentary
+    time-series, the loudness-range histogram, and the frequency-response
+    curves are omitted since they are exported to their own companion JSON
+    files (see _export_loudness_over_time, _export_histogram,
+    _export_frequency_response) and would make this JSON file unnecessarily
+    large.
+
+    Returns
+        A dict ready to be passed to json.dump() (after _json_safe()).
+    """
+    lra = result["lra_lu"]
+    short_term = result["short_term"]
+    momentary = result["momentary"]
+
+    loudness = {
+        "integrated_lufs": result["integrated_lufs"],
+        "lra_lu": lra,
+        "lra_label": _lra_label(lra) if not np.isnan(lra) else None,
+        "rms_dbfs": result["rms_dbfs"],
+        "momentary_max_lufs": float(np.max(momentary)) if momentary.size else None,
+        "short_term_max_lufs": float(np.max(short_term)) if short_term.size else None,
+        "short_term_min_lufs": (
+            float(np.min(short_term[short_term > _ABS_GATE_LUFS]))
+            if short_term.size and np.any(short_term > _ABS_GATE_LUFS) else None
+        ),
+    }
+
+    lfe = None
+    ba = result.get("lfe_band_analysis")
+    if ba is not None:
+        bass_lbl = (_sub_bass_ratio_label(ba["sub_bass_ratio_db"])
+                    if not np.isnan(ba["sub_bass_ratio_db"]) else None)
+        lfe = {
+            "threshold_dbfs": ba["threshold_dBFS"],
+            "activity_pct": ba["global_activity_pct"],
+            "activity_label": _lfe_activity_label(ba["global_activity_pct"]),
+            "sub_bass_ratio_db": ba["sub_bass_ratio_db"],
+            "sub_bass_label": bass_lbl,
+            "infra_ratio_db": ba["infra_ratio_db"],
+            "spectral_centroid_hz": ba["spectral_centroid_hz"],
+            "bands": [
+                {
+                    "label": b["label"],
+                    "activity_pct": b["activity_pct"],
+                    "p95_rel_db": b["p95_rel"],
+                    "peak_rel_db": b["peak_rel"],
+                    "spread_db": b["spread_db"],
+                }
+                for b in ba["bands"]
+            ],
+        }
+
+    channel_rms = None
+    if result["surround_rms"]:
+        channel_rms = {
+            "center_dbfs": result["center_rms_dbfs"],
+            "channels": [
+                {"label": label.strip(), "rms_dbfs": rms_dbfs, "rel_db": rel_db}
+                for label, rms_dbfs, rel_db in result["surround_rms"]
+            ],
+        }
+
+    return {
+        "channels": result["n_channels"],
+        "layout": result["effective_layout"] or None,
+        "loudness": loudness,
+        "per_channel": result["per_channel"] or None,
+        "lfe": lfe,
+        "channel_rms_relative_to_center": channel_rms,
+    }
+
+
+def _export_json(result, out_path):
+    """Write a machine-readable JSON summary of the analysis to out_path."""
+    import json
+
+    report = _json_safe(_build_json_report(result))
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+    print(f"  [JSON] {out_path}")
+
+
+def _export_loudness_over_time(result, out_path):
+    """Write the short-term loudness time-series to a companion JSON file.
+
+    out_path is derived from the main --json path by inserting a
+    "_LoudnessOverTime" suffix before the extension. The array is rounded to
+    1 decimal place and written without indentation to keep the file compact.
+    """
+    import json
+
+    short_term = result["short_term"]
+    values = [None if (math.isnan(v) or math.isinf(v)) else round(float(v), 1)
+              for v in short_term.tolist()]
+
+    root, ext = os.path.splitext(out_path)
+    lot_path = f"{root}_LoudnessOverTime{ext}"
+    with open(lot_path, "w", encoding="utf-8") as f:
+        json.dump(values, f, separators=(",", ":"))
+    print(f"  [JSON] {lot_path}")
+
+
+def _export_frequency_response(result, out_path):
+    """Write the frequency-response curves to a companion JSON file.
+
+    out_path is derived from the main --json path by inserting a
+    "_FrequencyResponse" suffix before the extension. Curves are on the raw,
+    deterministic 1/24-octave grid (same f_min/f_max/fraction for every
+    file), so curves from different releases can be compared/diffed
+    point-by-point. Written without indentation to keep the file compact.
+    """
+    import json
+
+    freq_audio = result.get("freq_audio", {})
+    freq_sr = freq_audio.get("sr", result["sr"])
+    frequency_response = {}
+    for key in ("left", "right", "center", "lfe"):
+        if key in freq_audio:
+            band_freqs, band_db = _frequency_response(
+                freq_audio[key], freq_sr, raw=True)
+            frequency_response[key] = {
+                "freqs_hz": band_freqs,
+                "level_db": band_db,
+            }
+
+    report = _json_safe(frequency_response)
+    root, ext = os.path.splitext(out_path)
+    fr_path = f"{root}_FrequencyResponse{ext}"
+    with open(fr_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, separators=(",", ":"))
+    print(f"  [JSON] {fr_path}")
+
+
+def _export_histogram(result, out_path):
+    """Write the loudness-range histogram to a companion JSON file.
+
+    out_path is derived from the main --json path by inserting a
+    "_Histogram" suffix before the extension. Uses identical binning/gating
+    logic as the Panel 3 plot (1 dB wide bins, 50 dB span centred on the LRA
+    band midpoint, snapped to the nearest 5 dB boundary) so the exported
+    histogram and the plotted one always agree. Written without indentation
+    to keep the file compact.
+    """
+    import json
+
+    short_term = result["short_term"]
+    histogram = None
+    lv_abs = short_term[short_term > _ABS_GATE_LUFS]
+    if lv_abs.size > 0:
+        rel_gate = np.mean(lv_abs) - _LRA_REL_GATE_LU
+        lv_gated = lv_abs[lv_abs >= rel_gate]
+
+        p10 = np.percentile(lv_gated, 10)
+        p95 = np.percentile(lv_gated, 95)
+        lra_center = (p10 + p95) / 2.0
+        center_5 = round(lra_center / 5.0) * 5
+        x_lo = center_5 - 25
+        x_hi = center_5 + 25
+
+        bin_edges = np.arange(x_lo, x_hi + 1, 1)
+        abs_counts, _ = np.histogram(lv_abs, bins=bin_edges)
+        gated_counts, _ = np.histogram(lv_gated, bins=bin_edges)
+
+        histogram = {
+            "bin_edges_lufs": bin_edges,
+            "absolute_gated_pct": abs_counts / len(lv_abs) * 100.0,
+            "double_gated_pct": gated_counts / len(lv_abs) * 100.0,
+            "rel_gate_lufs": rel_gate,
+            "p10_lufs": p10,
+            "p95_lufs": p95,
+        }
+
+    report = _json_safe(histogram)
+    root, ext = os.path.splitext(out_path)
+    hist_path = f"{root}_Histogram{ext}"
+    with open(hist_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, separators=(",", ":"))
+    print(f"  [JSON] {hist_path}")
 
 
 def _plot(result, out_path):
@@ -1431,6 +1664,10 @@ def main():
                          "--no-plot to suppress the plot")
     ap.add_argument("--no-plot", action="store_true",
                     help="Suppress the plot even when no --plot FILE is given")
+    ap.add_argument("--json", nargs="?", const="AUTO", default=None,
+                    metavar="FILE",
+                    help="Also write a machine-readable JSON summary (default: "
+                         "input filename with .json extension)")
     ap.add_argument("--skip-existing", action="store_true",
                     help="Skip files whose plot PNG already exists on disk")
     ap.add_argument("--debug", action="store_true",
@@ -1458,10 +1695,19 @@ def main():
               "files; each file will produce its own .png.", file=sys.stderr)
         fixed_plot_path = None
 
+    fixed_json_path = (None if args.json in (None, "AUTO") else args.json)
+    if fixed_json_path and len(paths) > 1:
+        print("[WARN] A fixed --json path cannot be used with multiple input "
+              "files; each file will produce its own .json.", file=sys.stderr)
+        fixed_json_path = None
+
     for i, path in enumerate(paths):
         plot_path = (fixed_plot_path
                      if fixed_plot_path
                      else os.path.splitext(path)[0] + ".png")
+        json_path = (fixed_json_path
+                     if fixed_json_path
+                     else os.path.splitext(path)[0] + ".json")
 
         if args.skip_existing and os.path.exists(plot_path):
             print(f"[SKIP] Plot already exists, skipping: {path}")
@@ -1480,6 +1726,12 @@ def main():
 
         if args.plot is not None and not args.no_plot:
             _plot(result, plot_path)
+
+        if args.json is not None:
+            _export_json(result, json_path)
+            _export_loudness_over_time(result, json_path)
+            _export_frequency_response(result, json_path)
+            _export_histogram(result, json_path)
 
 
 if __name__ == "__main__":

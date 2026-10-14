@@ -182,6 +182,101 @@ python AnalyzeDynamicRange.py movie.wav --no-plot
 | `script.py *.wav` | Per-file plots → `<name>.png` |
 | `script.py *.wav --plot out.png` | Warning; falls back to per-file naming |
 
+### `--json`
+
+Writes a compact, machine-readable **JSON** summary of the analysis alongside the console output. Useful for batch processing, QC pipelines, or feeding results into other tools (`jq`, Python, Excel/Power BI, etc.). Disabled by default.
+
+```bash
+# Default: auto-generates movie.json
+python AnalyzeDynamicRange.py movie.wav --json
+
+# Custom output filename
+python AnalyzeDynamicRange.py movie.wav --json report.json
+```
+
+| Invocation | Result |
+|---|---|
+| `script.py movie.wav` | No JSON (default) |
+| `script.py movie.wav --json` | JSON → `movie.json` |
+| `script.py movie.wav --json out.json` | JSON → `out.json` |
+| `script.py *.wav --json` | Per-file JSON → `<name>.json` |
+| `script.py *.wav --json out.json` | Warning; falls back to per-file naming |
+
+The JSON contains the same summary metrics shown on the console (integrated loudness, LRA, RMS, per-channel loudness when `--per-channel` is set, LFE band analysis, channel RMS relative to Center) plus the frequency-response curves on a fixed, deterministic 1/24-octave grid (same frequency points for every file), which makes them suitable for diffing between releases. The full momentary loudness time-series is omitted since it is plot-only data. `NaN`/`Infinity` values (e.g. metrics not applicable to the current layout) are serialised as `null`.
+
+A second, companion file with the `_LoudnessOverTime` suffix (e.g. `movie_LoudnessOverTime.json`) is written alongside the main JSON.
+
+Example structure:
+
+```jsonc
+{
+  "channels": 6,
+  "layout": "5.1",
+  "loudness": {
+    "integrated_lufs": -24.3,
+    "lra_lu": 18.7,
+    "lra_label": "dynamic",
+    "rms_dbfs": -20.1,
+    "momentary_max_lufs": -12.4,
+    "short_term_max_lufs": -14.8,
+    "short_term_min_lufs": -41.2
+  },
+  "per_channel": [
+    { "channel": 1, "integrated_lufs": -25.1, "role": "normal", "excluded_from_sum": false }
+  ],
+  "lfe": {
+    "threshold_dbfs": -39.3,
+    "activity_pct": 12.4,
+    "activity_label": "moderate",
+    "sub_bass_ratio_db": -2.1,
+    "sub_bass_label": "moderate",
+    "infra_ratio_db": -28.5,
+    "spectral_centroid_hz": 52.3,
+    "bands": [
+      { "label": "<20 Hz", "activity_pct": 3.1, "p95_rel_db": -8.2, "peak_rel_db": -2.1, "spread_db": 6.1 }
+    ]
+  },
+  "channel_rms_relative_to_center": {
+    "center_dbfs": -22.0,
+    "channels": [
+      { "label": "Ls", "rms_dbfs": -25.3, "rel_db": -3.3 }
+    ]
+  }
+}
+```
+
+`per_channel` is `null` unless `--per-channel` was passed. `lfe` is `null` when no LFE channel is present. `channel_rms_relative_to_center` is `null` when there is no Center channel to reference against (e.g. **2.1**, **mono**, **stereo**).
+
+`movie_FrequencyResponse.json` contains one entry per available channel (`left`, `right` for stereo/2.1, `center` for layouts with a Center channel, `lfe` when an LFE channel is present):
+
+```jsonc
+{
+  "left": {
+    "freqs_hz": [2.0, 2.1, 2.2, "...", 200.0],
+    "level_db": [-1.2, -0.9, -0.4, "...", 0.0]
+  },
+  "center": { "freqs_hz": ["..."], "level_db": ["..."] },
+  "lfe": { "freqs_hz": ["..."], "level_db": ["..."] }
+}
+```
+
+Each entry holds the raw 1/24-octave band points (≈161 points, 2–200 Hz, 0 dB-normalised) — the same fixed, deterministic grid is used for every file, so `level_db` arrays from different releases can be compared or subtracted point-by-point to spot spectral differences (e.g. an added/removed high-pass filter).
+
+`movie_Histogram.json` mirrors the Panel 3 histogram:
+
+```jsonc
+{
+  "bin_edges_lufs": [-45, -44, "...", 5],
+  "absolute_gated_pct": [0.0, 0.1, "...", 0.0],
+  "double_gated_pct": [0.0, 0.0, "...", 0.0],
+  "rel_gate_lufs": -34.5,
+  "p10_lufs": -28.3,
+  "p95_lufs": -14.1
+}
+```
+
+`bin_edges_lufs` defines 1 dB wide bins spanning a fixed 50 dB range centred on the LRA band (`len(bin_edges_lufs) - 1` bars, matching the plotted bar count), `absolute_gated_pct`/`double_gated_pct` are the percentage of (only absolute- / absolute+relative-) gated short-term loudness samples falling into each bin, and `rel_gate_lufs`/`p10_lufs`/`p95_lufs` are the same reference values shown in the plot. The whole file is `null` when the short-term loudness curve has no samples above the absolute gate.
+
 ### `--skip-existing`
 
 Skips any input file whose corresponding plot PNG already exists on disk. Useful when re-running the script on a folder of files after adding new titles:
