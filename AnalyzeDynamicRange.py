@@ -183,7 +183,7 @@ def _channel_weights(n_ch, layout=None, lfe_channel=None,
     weights = np.ones(n_ch, dtype=np.float32)
 
     if layout is None and n_ch == 5:
-        layout = "5.0"
+        layout = "4.1"
     elif layout is None and n_ch >= 6:
         layout = "5.1" if n_ch == 6 else "6.1" if n_ch == 7 else "7.1"
 
@@ -897,7 +897,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     if layout is not None:
         effective_layout = layout
     elif n_ch == 5:
-        effective_layout = "5.0"
+        effective_layout = "4.1"
     elif n_ch == 6:
         effective_layout = "5.1"
     elif n_ch == 7:

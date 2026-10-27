@@ -381,14 +381,14 @@ Channel order according to Microsoft wave format (see [here](https://learn.micro
 | Stereo (2 ch) | L R |
 | 2.1 (3 ch, explicit) | L R LFE |
 | 4.0 (4 ch, explicit) | L R C Cb |
-| 4.1 (5 ch, explicit) | L R C LFE Cb |
-| 5.0 (5 ch) | L R C Ls Rs |
+| 4.1 (5 ch) | L R C LFE Cb |
+| 5.0 (5 ch, explicit) | L R C Ls Rs |
 | 5.1 (6 ch) | L R C LFE Ls Rs |
 | 6.1 (7 ch) | L R C LFE Rc Ls Rs |
 | 7.1 (8 ch) | L R C LFE Lrs Rrs Ls Rs |
 | >7.1 (>8 ch) | 7.1 bed applied to ch 1–8; height channels (ch 9+) excluded with a warning |
 
-The layout is auto-detected from the channel count. 3 channels are always treated as unknown by default; use `--layout 2.1` to select L R LFE. 4 channels are always treated as unknown by default; use `--layout 4.0` to select L R C Cb. 5 channels are detected as **5.0** by default; use `--layout 4.1` to override. Use `--layout` to override for any other format.
+The layout is auto-detected from the channel count. 3 channels are always treated as unknown by default; use `--layout 2.1` to select L R LFE. 4 channels are always treated as unknown by default; use `--layout 4.0` to select L R C Cb. 5 channels are detected as **4.1** by default; use `--layout 5.0` to select L R C Ls Rs. Use `--layout` to override for any other format.
 
 ### Channel weighting (BS.1770)
 
