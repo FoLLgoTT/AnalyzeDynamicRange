@@ -17,17 +17,21 @@ These standards are internationally recognized and used in the film industry, st
 
 ### Loudness and Dynamic Range Metrics
 
-| Metric | Unit | Description |
-|--------|------|-------------|
-| **Integrated Loudness** | LUFS | Gated programme loudness across the entire file |
-| **Loudness Range (LRA)** | LU | Dynamic range per [EBU Tech 3342](https://tech.ebu.ch/docs/tech/tech3342.pdf) |
-| **RMS Level** | dBFS | Overall RMS across all channels |
-| **Momentary Loudness** | LUFS | Time series over 400 ms windows |
-| **Short-term Loudness** | LUFS | Time series over 3-second windows |
+| Metric | Unit | Description | Source |
+|--------|------|-------------|--------|
+| **Integrated Loudness** | LUFS | Gated programme loudness across the entire file | ITU-R BS.1770-4 / EBU R128 |
+| **Loudness Range (LRA)** | LU | Dynamic range per [EBU Tech 3342](https://tech.ebu.ch/docs/tech/tech3342.pdf) | EBU Tech 3342 |
+| **RMS Level** | dBFS | Overall RMS across all channels | *custom* |
+| **Momentary Loudness** | LUFS | Time series over 400 ms windows | EBU Tech 3341 |
+| **Short-term Loudness** | LUFS | Time series over 3-second windows | EBU Tech 3341 |
 
-### LFE Band Analysis
+Metrics marked *custom* are not defined by ITU or EBU. They are project-specific additions intended for comparing releases and are not comparable to values from standard loudness meters.
 
-The LFE channel is divided into four frequency bands. All level metrics are expressed **relative to the main-mix integrated loudness** so results are comparable across films with different overall levels. Statistics are computed only over LFE-active windows (short-term RMS ≥ integrated − 15 dB) to prevent long silent passages from distorting the results. A low pass at 120 Hz is applied before LFE analysis to remove unwanted high frequency content (clipping etc.).
+### LFE Band Analysis (custom)
+
+> **Custom metrics.** None of the LFE metrics below are defined by ITU or EBU; band limits, activity threshold and labels are project-specific.
+
+The LFE channel is divided
 
 | Metric | Unit | Description |
 |--------|------|-------------|
@@ -49,25 +53,28 @@ Frequency bands:
 | Bass | 40–80 Hz | Heard and felt; core LFE impact |
 | Upper LFE | 80–120 Hz | Mainly audible; crossover region to main speakers |
 
-### Channel Level Metrics (relative to Center)
+### Channel Level Metrics (relative to Center) (custom)
 
-All channels are measured against the unfiltered Center channel (Ch 3) as reference.
+> **Custom metric.** Unweighted, ungated RMS (no K-weighting); not defined by ITU or EBU.
+
+All channels
 
 | Channel | Filter applied |
 |---------|---------------|
 | L, R | none |
 | LFE | low-pass at 120 Hz (Butterworth order 4, zero-phase) |
-| Cb, Ls, Rs, Rc, Lrs, Rrs | high-pass at 80 Hz (Butterworth order 4, zero-phase) |
+| Cb, Ls, Rs, Rc, Lrs, Rrs | high-pass at 80 Hz (Butterworth order 4, single-pass) |
 
 ### Signal Processing
 
 - **K-Weighting Filter**: Natively implemented BS.1770-4 two-stage biquad filter
 - **Double gating**: Absolute gate at −70 LUFS + relative gate −10 LU below mean (integrated loudness); −20 LU below mean (LRA) — both per EBU Tech 3342
-- **Surround Channels**: Automatic +1.5 dB weighting per BS.1770
+- **Surround Channels**: +1.5 dB weighting for side surrounds (Ls/Rs) per BS.1770-4; back channels (Lrs/Rrs, Rc, Cb) weighted 1.0
+- **LRA per EBU Tech 3342**: relative gate −20 LU below the power-mean of the absolute-gated short-term blocks, strict `>` gating, nearest-rank p10/p95
 - **LFE Exclusion**: Subwoofer channel excluded from the loudness sum
 
-### Frequency response
-Low-end frequency response is shown for Center, Left and LFE channels. In this analysis high pass filtering can be observed.
+### Frequency response (custom)
+Not defined by ITU or EBU. Low-end frequency response
 
 ---
 
@@ -339,7 +346,7 @@ Both the bounds and the title value are computed using the same double-gating lo
 
 ### Panel 4 — Channel RMS relative to Center
 
-Text box showing the RMS level of each channel relative to the unfiltered Center channel. Hidden for layouts without a Center channel (e.g. **2.1**).
+Text box showing the RMS level (*custom*, unweighted) of each channel relative to the unfiltered Center channel.
 
 ### Panel 5 — LFE Band Analysis
 
@@ -347,7 +354,7 @@ Text box showing the LFE band analysis: overall activity (% of runtime), per-ban
 
 ### Panel 6 — Summary
 
-Text box with a concise qualitative assessment derived from the numeric results:
+Text box with a concise qualitative assessment derived from the numeric results. All labels and their thresholds are **custom** (not part of ITU/EBU), including the LRA labels:
 
 | Field | Source metric | Labels |
 |---|---|---|
@@ -396,12 +403,15 @@ The layout is auto-detected from the channel count. 3 channels are always treate
 |---|---|
 | L, R, C | 1.0 |
 | LFE | 0.0 (excluded) |
-| Cb, Ls, Rs, Rc, Lrs, Rrs | 1.41 (+1.5 dB) |
+| Ls, Rs (side surrounds, azimuth 60–120°) | 1.41 (+1.5 dB) |
+| Lrs, Rrs, Rc, Cb (back channels) | 1.0 |
 | Height channels (ch 9+) | 0.0 (excluded) |
 
+Per BS.1770-4 Table 3, only channels at 60–120° azimuth receive +1.5 dB; back channels are weighted 1.0. `--exclude-surround` mutes both side and back channels.
+
 > **5.0**: No LFE channel present; Ls and Rs are weighted +1.5 dB.  
-> **4.1**: LFE = Ch 4 (excluded), Cb = Ch 5 (+1.5 dB).  
-> **4.0**: No LFE channel present; Cb = Ch 4 (+1.5 dB).  
+> **4.1**: LFE = Ch 4 (excluded), Cb = Ch 5 (1.0).  
+> **4.0**: No LFE channel present; Cb = Ch 4 (1.0).  
 > **2.1**: No Center channel; LFE = Ch 3 (excluded). L and R are unweighted (1.0); no surround gain is applied since there are no surround channels.
 
 ---
@@ -423,7 +433,7 @@ The layout is auto-detected from the channel count. 3 channels are always treate
 LRA measures how much the loudness *varies over time*. It is computed per **EBU Tech 3342** using a two-stage gate on short-term loudness values (3-second windows):
 
 1. **Absolute gate** — blocks below −70 LUFS are discarded (silence).
-2. **Relative gate** — blocks more than −20 LU below the mean of the remaining values are also discarded (very quiet passages that are not representative of the programme content).
+2. **Relative gate** — blocks more than −20 LU below the power-mean loudness of the remaining values are also discarded
 
 The LRA is the difference between the **95th and 10th percentile** of the remaining values, expressed in Loudness Units (LU).
 
@@ -433,6 +443,8 @@ The LRA is the difference between the **95th and 10th percentile** of the remain
 - A **high LRA** means the loudness varies widely — quiet dialogue scenes contrast strongly with loud action sequences. This is the intended dynamic behaviour for cinema and high-quality streaming.
 
 **LRA does not measure peak levels.** A movie can have a high LRA but still be clipping, or a low LRA but be at a perfectly safe level.
+
+The labels below are **custom** classifications; EBU Tech 3342 defines only the LRA value itself.
 
 | LRA | Label |
 |---|---|
@@ -445,9 +457,11 @@ The LRA is the difference between the **95th and 10th percentile** of the remain
 
 ---
 
-## LFE Channel Analysis
+## LFE Channel Analysis (custom)
 
-The LFE channel is analyzed **after** applying a zero-phase Butterworth low-pass filter at **120 Hz** (order 4). Zero-phase filtering prevents time-domain phase distortion and keeps peak measurements accurate.
+> All metrics, thresholds and labels in this section are **custom** and not part of ITU or EBU standards.
+
+The LFE channel
 
 ### Activity gating
 

@@ -9,7 +9,6 @@ so no extra packages beyond numpy/scipy/soundfile are required):
     - Integrated Loudness (LUFS)        gated programme loudness
     - Loudness Range (LRA, in LU)        EBU Tech 3342, the key dynamic-
                                           range metric for film
-    - True Peak (dBTP)                    4x oversampled inter-sample peak
     - Momentary / Short-term loudness    time-series (400 ms / 3 s windows)
 
 Channel handling
@@ -17,20 +16,21 @@ Channel handling
     Microsoft wave format channel order:
         mono        : [C]
         stereo      : [L, R]
-        5.0  (5 ch) : [L, R, C, Ls, Rs]          (no LFE)
+        4.1  (5 ch) : [L, R, C, LFE, Cb]         (LFE = ch 4, Cb = ch 5)
         5.1  (6 ch) : [L, R, C, LFE, Ls, Rs]
         6.1  (7 ch) : [L, R, C, LFE, Rc, Ls, Rs]
         7.1  (8 ch) : [L, R, C, LFE, Lrs, Rrs, Ls, Rs]
         >7.1 (>8 ch): 7.1 bed applied to ch 1–8; height channels excluded
                       with a warning (e.g. 9.1.4, 9.1.6, Atmos beds)
-    4.1 must be selected explicitly via --layout:
-        4.1  (5 ch) : [L, R, C, LFE, Cb]         (LFE = ch 4, Cb = ch 5)
-    4.0 must be selected explicitly via --layout:
+    5.0 must be selected explicitly via --layout:
+        5.0  (5 ch) : [L, R, C, Ls, Rs]          (no LFE)
+    4.0 must
         4.0  (4 ch) : [L, R, C, Cb]               (no LFE, Cb = ch 4)
     2.1 must be selected explicitly via --layout:
         2.1  (3 ch) : [L, R, LFE]                (LFE = ch 3, no Center)
     The LFE channel is always excluded from the loudness sum.
-    Surround channels are weighted +1.5 dB per BS.1770.
+    Side surrounds (Ls/Rs) are weighted +1.5 dB per BS.1770-4; back
+    channels (Lrs/Rrs, Rc, Cb) are weighted 1.0.
     Use --layout / --lfe-channel to override the auto-detection.
 
 Requirements
@@ -60,6 +60,14 @@ import numpy as np
 import soundfile as sf
 from scipy.interpolate import PchipInterpolator
 from scipy.signal import butter, lfilter, resample_poly, sosfilt, sosfiltfilt, welch
+
+
+# Bump whenever a change affects measured values, so exported results from
+# different tool versions can be told apart.
+__version__ = "2.0.0"
+
+_DISCLAIMER = ("Comparative release analysis - not a delivery QC or "
+               "certified loudness meter.")
 
 
 # Absolute silence floor used for log conversions to avoid log10(0).
@@ -157,11 +165,43 @@ def _k_weight(data, sr):
     return out.astype(data.dtype, copy=False)
 
 
+def _surround_channels(n_ch, layout=None):
+    """Return (side, back) lists of 0-based surround channel indices.
+
+    side  Ls/Rs (azimuth 60-120°)        -> weighted 1.41 per BS.1770-4
+    back  Lrs/Rrs, Rc, Cb (outside range) -> weighted 1.0 per BS.1770-4
+    Both groups count as surround for --exclude-surround and channel roles.
+    """
+    if layout is None and n_ch == 5:
+        layout = "4.1"
+    elif layout is None and n_ch >= 6:
+        layout = "5.1" if n_ch == 6 else "6.1" if n_ch == 7 else "7.1"
+
+    side, back = [], []
+    if layout == "4.0" and n_ch >= 4:
+        back = [3]                       # Cb
+    elif layout == "4.1" and n_ch >= 5:
+        back = [4]                       # Cb
+    elif layout == "5.0" and n_ch >= 5:
+        side = [3, 4]                    # Ls Rs
+    elif layout == "5.1" and n_ch >= 6:
+        side = [4, 5]                    # Ls Rs
+    elif layout == "6.1" and n_ch >= 7:
+        back = [4]                       # Rc
+        side = [5, 6]                    # Ls Rs
+    elif layout == "7.1" and n_ch >= 8:
+        back = [4, 5]                    # Lrs Rrs
+        side = [6, 7]                    # Ls Rs
+    return side, back
+
+
 def _channel_weights(n_ch, layout=None, lfe_channel=None,
                      exclude_surround=False):
     """Determine the BS.1770 channel gain weights for the loudness sum.
 
-    Surround channels receive +1.5 dB (factor 1.41); the LFE is excluded.
+    Per BS.1770-4 Table 3 only side surrounds (Ls/Rs, azimuth 60-120°)
+    receive +1.5 dB (factor 1.41). Back channels (Lrs/Rrs, Rc, Cb) are
+    weighted 1.0. The LFE is excluded.
 
     Parameters
         n_ch              Number of channels in the file.
@@ -178,8 +218,6 @@ def _channel_weights(n_ch, layout=None, lfe_channel=None,
     Returns
         numpy array of length n_ch with the per-channel weights.
     """
-    # Surround channels are weighted +1.5 dB, or muted when excluded.
-    surround = 0.0 if exclude_surround else 1.41
     weights = np.ones(n_ch, dtype=np.float32)
 
     if layout is None and n_ch == 5:
@@ -191,30 +229,17 @@ def _channel_weights(n_ch, layout=None, lfe_channel=None,
     # 2.1 is a special case with no Center channel: L R LFE.
     if layout == "2.1" and n_ch >= 3:
         weights[2] = 0.0                 # LFE excluded
-    elif layout == "4.0" and n_ch >= 4:
-        weights[3] = surround            # Cb (Center Back), no LFE
-    elif layout == "4.1" and n_ch >= 5:
+    elif layout in ("4.1", "5.1", "6.1") and n_ch >= 5:
         weights[3] = 0.0                 # LFE excluded
-        weights[4] = surround            # Cb (Center Back)
-    elif layout == "5.0" and n_ch >= 5:
-        weights[3] = surround            # Ls
-        weights[4] = surround            # Rs
-    elif layout == "5.1" and n_ch >= 6:
-        weights[3] = 0.0                 # LFE excluded
-        weights[4] = surround            # Ls
-        weights[5] = surround            # Rs
-    elif layout == "6.1" and n_ch >= 7:
-        weights[3] = 0.0                 # LFE excluded
-        weights[4] = surround            # Rc (Rear Center)
-        weights[5] = surround            # Ls
-        weights[6] = surround            # Rs
     elif layout == "7.1" and n_ch >= 8:
         weights[3] = 0.0                 # LFE excluded
-        weights[4] = surround            # Lrs
-        weights[5] = surround            # Rrs
-        weights[6] = surround            # Ls
-        weights[7] = surround            # Rs
         weights[8:] = 0.0                # Height channels excluded (9.1.4, 9.1.6, …)
+
+    side, back = _surround_channels(n_ch, layout)
+    for ch in side:
+        weights[ch] = 0.0 if exclude_surround else 1.41
+    for ch in back:
+        weights[ch] = 0.0 if exclude_surround else 1.0
 
     if lfe_channel is not None and 0 <= lfe_channel < n_ch:
         weights[lfe_channel] = 0.0
@@ -339,18 +364,46 @@ def _integrated_loudness(z, weights):
     return -0.691 + 10.0 * np.log10(max(float(final_z @ weights), _EPS))
 
 
+def _lra_relative_gate(lv_abs):
+    """Relative LRA gate per EBU Tech 3342.
+
+    The gate lies _LRA_REL_GATE_LU below the power-mean loudness of the
+    absolute-gated short-term blocks (not the arithmetic mean of their LUFS
+    values, which would place the gate too low and inflate the LRA).
+    """
+    power_mean = np.mean(np.power(10.0, lv_abs / 10.0))
+    return 10.0 * np.log10(max(float(power_mean), _EPS)) - _LRA_REL_GATE_LU
+
+
+def _lra_gating(short_term_loudness):
+    """Apply the EBU Tech 3342 double gate to short-term loudness.
+
+    Returns
+        Tuple (lv_abs, rel_gate, lv_gated): absolute-gated values, the
+        relative gate in LUFS (nan when lv_abs is empty) and the double-gated
+        values. Both gates use a strict '>' comparison as in Tech 3342.
+    """
+    lv_abs = short_term_loudness[short_term_loudness > _ABS_GATE_LUFS]
+    if lv_abs.size == 0:
+        return lv_abs, float("nan"), lv_abs
+    rel_gate = _lra_relative_gate(lv_abs)
+    return lv_abs, rel_gate, lv_abs[lv_abs > rel_gate]
+
+
+def _lra_percentile(values, p):
+    """Nearest-rank percentile on sorted values (EBU Tech 3342)."""
+    s = np.sort(values)
+    idx = int(round((s.size - 1) * p / 100.0))
+    return float(s[idx])
+
+
 def _loudness_range(short_term_loudness):
     """Loudness Range (LU) per EBU Tech 3342 from short-term loudness."""
-    lv = short_term_loudness[short_term_loudness > _ABS_GATE_LUFS]
-    if lv.size < 2:
-        return float("nan")
-
-    gate = np.mean(lv) - _LRA_REL_GATE_LU
-    gated = lv[lv >= gate]
+    _, _, gated = _lra_gating(short_term_loudness)
     if gated.size < 2:
         return float("nan")
 
-    return float(np.percentile(gated, 95) - np.percentile(gated, 10))
+    return _lra_percentile(gated, 95) - _lra_percentile(gated, 10)
 
 
 def _rms_dbfs(data):
@@ -888,6 +941,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
     else:
         effective_layout = ""
 
+    print(f"Tool version : AnalyzeDynamicRange {__version__}")
     print(f"File         : {path}")
     print(f"Sample rate  : {sr} Hz")
     print(f"Channels     : {n_ch}")
@@ -897,23 +951,30 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
               f"(downsampled from {sr} Hz for loudness / RMS / LFE analysis)")
     print()
 
-    # Reference weights (surrounds at +1.5 dB) identify the channel roles
-    # independently of whether the surrounds are excluded from this analysis.
+    # Reference weights identify the LFE independently of whether the
+    # surrounds are excluded from this analysis.
     base_weights = _channel_weights(n_ch, layout=layout,
                                     lfe_channel=lfe_channel)
     weights = _channel_weights(n_ch, layout=layout, lfe_channel=lfe_channel,
                                exclude_surround=exclude_surround)
 
+    side_idx, back_idx = _surround_channels(n_ch, layout)
+    surround_idx = set(side_idx) | set(back_idx)
+
     lfe_ch = [i + 1 for i, w in enumerate(base_weights) if w == 0.0]
-    surround_ch = [i + 1 for i, w in enumerate(base_weights)
-                   if abs(w - 1.41) < 1e-6]
     if lfe_ch:
         print(f"Excluded ch  : {lfe_ch} (LFE, not part of loudness sum)")
-    if surround_ch:
+    if surround_idx:
+        side_ch = [i + 1 for i in side_idx]
+        back_ch = [i + 1 for i in back_idx]
         if exclude_surround:
-            print(f"Surround ch  : {surround_ch} (excluded from analysis)")
+            print(f"Surround ch  : {sorted(side_ch + back_ch)} "
+                  f"(excluded from analysis)")
         else:
-            print(f"Surround ch  : {surround_ch} (weighted +1.5 dB)")
+            if side_ch:
+                print(f"Surround ch  : {side_ch} (side, weighted +1.5 dB)")
+            if back_ch:
+                print(f"Surround ch  : {back_ch} (back, weighted 0 dB)")
     if n_ch > 8:
         height_ch = list(range(9, n_ch + 1))
         print(f"[WARN] {len(height_ch)} height channel(s) detected "
@@ -1015,7 +1076,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
                 else:
                     tag = " (height channel, excluded from sum)"
                     role = "height"
-            elif abs(base_weights[ch] - 1.41) < 1e-6:
+            elif ch in surround_idx:
                 tag = " (surround, excluded from sum)" if exclude_surround \
                     else " (surround)"
                 role = "surround"
@@ -1249,6 +1310,7 @@ def _build_json_report(result):
         }
 
     return {
+        "tool_version": __version__,
         "channels": result["n_channels"],
         "layout": result["effective_layout"] or None,
         "loudness": loudness,
@@ -1272,19 +1334,26 @@ def _export_loudness_over_time(result, out_path):
     """Write the short-term loudness time-series to a companion JSON file.
 
     out_path is derived from the main --json path by inserting a
-    "_LoudnessOverTime" suffix before the extension. The array is rounded to
-    1 decimal place and written without indentation to keep the file compact.
+    "_LoudnessOverTime" suffix before the extension. The values are rounded
+    to 1 decimal place and written without indentation to keep the file
+    compact. step_s is the hop between values; the first value is centred
+    at 1.5 s (3 s window).
     """
     import json
 
     short_term = result["short_term"]
     values = [None if (math.isnan(v) or math.isinf(v)) else round(float(v), 1)
               for v in short_term.tolist()]
+    report = {
+        "tool_version": __version__,
+        "step_s": result["step_s"],
+        "short_term_lufs": values,
+    }
 
     root, ext = os.path.splitext(out_path)
     lot_path = f"{root}_LoudnessOverTime{ext}"
     with open(lot_path, "w", encoding="utf-8") as f:
-        json.dump(values, f, separators=(",", ":"))
+        json.dump(report, f, separators=(",", ":"))
     print(f"  [JSON] {lot_path}")
 
 
@@ -1317,6 +1386,7 @@ def _export_frequency_response(result, out_path):
     for key, curve in frequency_response.items():
         report[key]["freqs_hz"] = [round(float(f), 3)
                                    for f in curve["freqs_hz"]]
+    report = {"tool_version": __version__, "channels": report}
     root, ext = os.path.splitext(out_path)
     fr_path = f"{root}_FrequencyResponse{ext}"
     with open(fr_path, "w", encoding="utf-8") as f:
@@ -1338,13 +1408,10 @@ def _export_histogram(result, out_path):
 
     short_term = result["short_term"]
     histogram = None
-    lv_abs = short_term[short_term > _ABS_GATE_LUFS]
-    if lv_abs.size > 0:
-        rel_gate = np.mean(lv_abs) - _LRA_REL_GATE_LU
-        lv_gated = lv_abs[lv_abs >= rel_gate]
-
-        p10 = np.percentile(lv_gated, 10)
-        p95 = np.percentile(lv_gated, 95)
+    lv_abs, rel_gate, lv_gated = _lra_gating(short_term)
+    if lv_gated.size > 0:
+        p10 = _lra_percentile(lv_gated, 10)
+        p95 = _lra_percentile(lv_gated, 95)
         lra_center = (p10 + p95) / 2.0
         center_5 = round(lra_center / 5.0) * 5
         x_lo = center_5 - 25
@@ -1363,7 +1430,8 @@ def _export_histogram(result, out_path):
             "p95_lufs": p95,
         }
 
-    report = _json_safe(histogram)
+    report = {"tool_version": __version__,
+              "histogram": _json_safe(histogram)}
     root, ext = os.path.splitext(out_path)
     hist_path = f"{root}_Histogram{ext}"
     with open(hist_path, "w", encoding="utf-8") as f:
@@ -1413,17 +1481,14 @@ def _plot(result, out_path):
 
     # LRA bounds: apply the same double gate as _loudness_range()
     if not np.isnan(result["lra_lu"]):
-        lv_abs1 = short_term[short_term > _ABS_GATE_LUFS]
-        if lv_abs1.size > 0:
-            rel_gate1 = np.mean(lv_abs1) - _LRA_REL_GATE_LU
-            lv_dg = lv_abs1[lv_abs1 >= rel_gate1]
-            if lv_dg.size > 0:
-                p10 = np.percentile(lv_dg, 10)
-                p95 = np.percentile(lv_dg, 95)
-                ax1.axhline(p95, color="#ff7f0e", ls=":", lw=1.0, alpha=0.7,
-                            label=f"LRA bounds (p10: {p10:.1f}, p95: {p95:.1f})")
-                ax1.axhline(p10, color="#ff7f0e", ls=":", lw=1.0, alpha=0.7)
-                ax1.fill_between(t, p10, p95, alpha=0.1, color="#ff7f0e")
+        _, _, lv_dg = _lra_gating(short_term)
+        if lv_dg.size > 0:
+            p10 = _lra_percentile(lv_dg, 10)
+            p95 = _lra_percentile(lv_dg, 95)
+            ax1.axhline(p95, color="#ff7f0e", ls=":", lw=1.0, alpha=0.7,
+                        label=f"LRA bounds (p10: {p10:.1f}, p95: {p95:.1f})")
+            ax1.axhline(p10, color="#ff7f0e", ls=":", lw=1.0, alpha=0.7)
+            ax1.fill_between(t, p10, p95, alpha=0.1, color="#ff7f0e")
 
     ax1.set_xlabel("")
     st_valid = short_term[short_term > _ABS_GATE_LUFS]
@@ -1462,16 +1527,13 @@ def _plot(result, out_path):
         ax_lfe_strip.set_xlabel("Time (s)")
     # Apply the same two-stage gate as _loudness_range() / EBU Tech 3342:
     #   stage 1 – absolute gate at -70 LUFS
-    #   stage 2 – relative gate at -20 LU below the mean of stage-1 values
-    lv_abs = short_term[short_term > _ABS_GATE_LUFS]
+    #   stage 2 – relative gate at -20 LU below the power mean of stage 1
+    lv_abs, rel_gate, lv_gated = _lra_gating(short_term)
 
-    if lv_abs.size > 0:
-        rel_gate = np.mean(lv_abs) - _LRA_REL_GATE_LU
-        lv_gated = lv_abs[lv_abs >= rel_gate]
-
+    if lv_gated.size > 0:
         # p10 / p95 of the double-gated set — identical to _loudness_range()
-        p10 = np.percentile(lv_gated, 10)
-        p95 = np.percentile(lv_gated, 95)
+        p10 = _lra_percentile(lv_gated, 10)
+        p95 = _lra_percentile(lv_gated, 95)
 
         # Dynamic X-axis: always 50 dB wide, centred on the LRA band midpoint
         # (p10/p95), snapped to the nearest 5 dB boundary so that both edges
@@ -1621,15 +1683,35 @@ def _plot(result, out_path):
                  bbox=dict(boxstyle="round,pad=0.5", facecolor="#ddf0dd",
                            edgecolor="#2d7a2d", alpha=0.85))
 
+    # Reserve a strip at the bottom so the footer does not overlap the
+    # frequency-response x-axis label.
+    try:
+        fig.get_layout_engine().set(rect=(0, 0.012, 1, 0.988))
+    except (AttributeError, TypeError):
+        pass
+    fig.text(0.5, 0.002,
+             f"AnalyzeDynamicRange {__version__}  ·  {_DISCLAIMER}",
+             ha="center", va="bottom", fontsize=7, color="#777777")
+
     fig.savefig(out_path, dpi=120)
     print(f"\n  [PLOT] {out_path}")
 
 
 
 def main():
+    # Console output uses characters such as '−' and '–'; avoid crashes on
+    # consoles whose code page cannot encode them (e.g. cp1252 on Windows).
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except AttributeError:
+            pass
+
     ap = argparse.ArgumentParser(
         description="Analyse the dynamic range and loudness of a film audio "
                     "file (ITU-R BS.1770-4 / EBU R128).")
+    ap.add_argument("--version", action="version",
+                    version=f"%(prog)s {__version__}")
     ap.add_argument("audio", nargs="+",
                     help="Path(s) to audio files; glob patterns are supported "
                          "(e.g. *.wav, /path/to/reels/*.wav)")
@@ -1639,7 +1721,7 @@ def main():
     ap.add_argument("--lfe-channel", type=int, default=None, metavar="N",
                     help="0-based index of the LFE channel to exclude")
     ap.add_argument("--per-channel", action="store_true",
-                    help="Also report loudness and true peak per channel")
+                    help="Also report integrated loudness per channel")
     ap.add_argument("--exclude-surround", action="store_true",
                     help="Exclude the surround channels from the analysis "
                          "(front/dialogue-only loudness)")
