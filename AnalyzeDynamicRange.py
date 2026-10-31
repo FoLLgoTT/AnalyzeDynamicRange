@@ -717,25 +717,6 @@ def _lfe_band_analysis(data_lfe, sr, integrated_main):
     }
 
 
-def _surround_highpass(data_ch, sr):
-    """Apply a zero-phase Butterworth high-pass filter at _SURROUND_HIGHPASS_HZ.
-
-    Parameters
-        data_ch  Single channel audio data (1D float array).
-        sr       Sample rate in Hz.
-
-    Returns
-        Filtered copy of data_ch.
-    """
-    nyquist = sr / 2.0
-    if _SURROUND_HIGHPASS_HZ >= nyquist:
-        return data_ch
-
-    sos = butter(_SURROUND_HIGHPASS_ORDER, _SURROUND_HIGHPASS_HZ / nyquist,
-                 btype='high', output='sos')
-    return sosfiltfilt(sos, data_ch)
-
-
 def _surround_rms_relative_to_center(data, sr, effective_layout,
                                       lfe_filtered=None):
     """Measure all channel RMS levels relative to the center channel.
@@ -802,7 +783,7 @@ def _surround_rms_relative_to_center(data, sr, effective_layout,
             (3, "Ls ", "highpass"),
             (4, "Rs ", "highpass"),
         ]
-    elif n_ch >= 4:
+    elif effective_layout in ("5.1", "6.1", "7.1") and n_ch >= 4:
         channel_map.append((3, "LFE", "lowpass"))
 
     if effective_layout == "7.1":
@@ -1331,6 +1312,11 @@ def _export_frequency_response(result, out_path):
             }
 
     report = _json_safe(frequency_response)
+    # _json_safe rounds to 1 decimal, which collapses neighbouring 1/24-octave
+    # bands at low frequencies; keep 3 decimals for the frequency axis.
+    for key, curve in frequency_response.items():
+        report[key]["freqs_hz"] = [round(float(f), 3)
+                                   for f in curve["freqs_hz"]]
     root, ext = os.path.splitext(out_path)
     fr_path = f"{root}_FrequencyResponse{ext}"
     with open(fr_path, "w", encoding="utf-8") as f:
