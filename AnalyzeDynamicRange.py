@@ -595,15 +595,13 @@ def _lfe_lowpass(data_lfe, sr):
 
 
 def _lra_label(lra):
-    if lra > 24:
-        return "extreme"
-    if lra > 22:
+    if lra >= 25:
         return "very high"
-    if lra > 20:
+    if lra >= 22:
         return "high"
-    if lra > 18:
+    if lra >= 19:
         return "moderate"
-    if lra > 16:
+    if lra >= 16:
         return "low"
     return "very low"
 
@@ -1056,7 +1054,7 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
               f"{np.min(short_term[short_term > _ABS_GATE_LUFS]):8.1f} LUFS")
     print()
 
-    if not np.isnan(lra) and lra <= 16.0:
+    if not np.isnan(lra) and lra < 16.0:
         print(f"  [INFO] Very low LRA ({lra:.1f} LU) - heavily compressed for film.")
 
     per_channel_results = []
