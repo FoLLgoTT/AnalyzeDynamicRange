@@ -358,7 +358,7 @@ Text box with a concise qualitative assessment derived from the numeric results.
 
 | Field | Source metric | Labels |
 |---|---|---|
-| **Loudness range** | LRA (LU) | `heavily compressed` · `compressed` · `moderate` · `dynamic` · `high dynamic` · `extreme dynamic` |
+| **Loudness range** | LRA (LU) | `very low` · `low` · `moderate` · `high` · `very high` · `extreme` |
 | **LFE activity** | LFE active (% of runtime) | `restrained` · `moderate` · `active` · `very active` · `overused` |
 | **LFE depth** | Sub-bass ratio (dB) | `upper-bass` · `moderate` · `deep` · `seismic` |
 
@@ -448,12 +448,12 @@ The labels below are **custom** classifications; EBU Tech 3342 defines only the 
 
 | LRA | Label |
 |---|---|
-| > 35 LU | `extreme dynamic` |
-| > 30 LU | `high dynamic` |
-| > 25 LU | `dynamic` |
-| > 20 LU | `moderate` |
-| > 15 LU | `compressed` |
-| ≤ 15 LU | `heavily compressed` |
+| > 24 LU | `extreme dynamic` |
+| > 22 LU | `high dynamic` |
+| > 20 LU | `dynamic` |
+| > 18 LU | `moderate` |
+| > 16 LU | `low` |
+| ≤ 16 LU | `very low` |
 
 ---
 

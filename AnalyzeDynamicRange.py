@@ -595,17 +595,17 @@ def _lfe_lowpass(data_lfe, sr):
 
 
 def _lra_label(lra):
-    if lra >= 35:
-        return "extreme dynamic"
-    if lra >= 30:
-        return "high dynamic"
-    if lra >= 25:
-        return "dynamic"
-    if lra >= 20:
+    if lra > 24:
+        return "extreme"
+    if lra > 22:
+        return "very high"
+    if lra > 20:
+        return "high"
+    if lra > 18:
         return "moderate"
-    if lra >= 15:
-        return "compressed"
-    return "heavily compressed"
+    if lra > 16:
+        return "low"
+    return "very low"
 
 
 def _lfe_activity_label(pct):
@@ -1056,8 +1056,8 @@ def analyze(path, layout=None, lfe_channel=None, per_channel=False,
               f"{np.min(short_term[short_term > _ABS_GATE_LUFS]):8.1f} LUFS")
     print()
 
-    if not np.isnan(lra) and lra < 5.0:
-        print(f"  [INFO] Low LRA ({lra:.1f} LU) - heavily compressed for film.")
+    if not np.isnan(lra) and lra <= 16.0:
+        print(f"  [INFO] Very low LRA ({lra:.1f} LU) - heavily compressed for film.")
 
     per_channel_results = []
     if per_channel:
