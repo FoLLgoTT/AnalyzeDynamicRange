@@ -1396,11 +1396,10 @@ def _export_histogram(result, out_path):
     """Write the loudness-range histogram to a companion JSON file.
 
     out_path is derived from the main --json path by inserting a
-    "_Histogram" suffix before the extension. Uses identical binning/gating
-    logic as the Panel 3 plot (1 dB wide bins, 50 dB span centred on the LRA
-    band midpoint, snapped to the nearest 5 dB boundary) so the exported
-    histogram and the plotted one always agree. Written without indentation
-    to keep the file compact.
+    "_Histogram" suffix before the extension. Uses the same gating as the
+    Panel 3 plot, but the full range (1 dB wide bins from the absolute gate
+    up to the loudest block) so absolute_gated_pct sums to 100 %. Written
+    without indentation to keep the file compact.
     """
     import json
 
@@ -1410,10 +1409,8 @@ def _export_histogram(result, out_path):
     if lv_gated.size > 0:
         p10 = _lra_percentile(lv_gated, 10)
         p95 = _lra_percentile(lv_gated, 95)
-        lra_center = (p10 + p95) / 2.0
-        center_5 = round(lra_center / 5.0) * 5
-        x_lo = center_5 - 25
-        x_hi = center_5 + 25
+        x_lo = int(_ABS_GATE_LUFS)
+        x_hi = int(np.ceil(lv_abs.max())) + 1
 
         bin_edges = np.arange(x_lo, x_hi + 1, 1)
         abs_counts, _ = np.histogram(lv_abs, bins=bin_edges)

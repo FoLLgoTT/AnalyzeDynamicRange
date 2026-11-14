@@ -1,4 +1,4 @@
-﻿# AnalyzeDynamicRange
+# AnalyzeDynamicRange
 
 A Python application for analyzing the dynamic range, LFE activity and low-end extension of movie audio files.
 
@@ -273,7 +273,7 @@ Each entry holds the raw 1/24-octave band points (≈161 points, 2–200 Hz, 0 d
 
 ```jsonc
 {
-  "bin_edges_lufs": [-45, -44, "...", 5],
+  "bin_edges_lufs": [-70, -69, "...", -10],
   "absolute_gated_pct": [0.0, 0.1, "...", 0.0],
   "double_gated_pct": [0.0, 0.0, "...", 0.0],
   "rel_gate_lufs": -34.5,
@@ -282,7 +282,7 @@ Each entry holds the raw 1/24-octave band points (≈161 points, 2–200 Hz, 0 d
 }
 ```
 
-`bin_edges_lufs` defines 1 dB wide bins spanning a fixed 50 dB range centred on the LRA band (`len(bin_edges_lufs) - 1` bars, matching the plotted bar count), `absolute_gated_pct`/`double_gated_pct` are the percentage of (only absolute- / absolute+relative-) gated short-term loudness samples falling into each bin, and `rel_gate_lufs`/`p10_lufs`/`p95_lufs` are the same reference values shown in the plot. The whole file is `null` when the short-term loudness curve has no samples above the absolute gate.
+`absolute_gated_pct`/`double_gated_pct` are the percentage of (only absolute- / absolute+relative-) gated short-term loudness samples falling into each bin
 
 ### `--skip-existing`
 
